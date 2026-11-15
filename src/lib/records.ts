@@ -10,6 +10,7 @@
  */
 import type { Activity, Assessment, EnvCard, Level, MissionEnv, VitalKey } from './assessment'
 import type { FhirObservation, PlanId } from './exercise'
+import { checkFitness, type FitnessFlag, type FitnessResult } from './fitness'
 import type { SleepMood, SleepObservation } from './sleep'
 
 const KEY = 'astroHealth.records.v1'
@@ -34,6 +35,11 @@ export type Snapshot = {
   cabin?: { stale: boolean; values: Partial<Record<EnvCard['key'], number>> }
   /** 是否為按下 SIMULATE EMERGENCY 時的假數據 */
   emergency: boolean
+  /**
+   * 這一筆紀錄當下收到的任務適任測驗結果（有氧／肌力／骨密度，見 lib/fitness.ts）與不符合的規定。
+   * flags 不是空的 → 紀錄面板會把這一筆標示出來，給地面特別處置
+   */
+  fitness?: { result: FitnessResult; flags: FitnessFlag[] }
 }
 
 /**
@@ -176,8 +182,19 @@ export function makeSnapshot(
   return snap
 }
 
-/** 加一筆快照，超過上限就丟掉最舊的 */
-export function addSnapshot(r: Records, s: Snapshot): Records {
+/** 這筆測驗結果是不是已經記在某一筆紀錄上了 */
+export function hasFitness(r: Records, id: string): boolean {
+  return r.snapshots.some((s) => s.fitness?.result.id === id)
+}
+
+/**
+ * 加一筆快照，超過上限就丟掉最舊的。
+ * 傳入 fitness：如果這筆測驗結果還沒記過，就附在這筆快照上並檢查規定（同一筆結果只記一次）
+ */
+export function addSnapshot(r: Records, s: Snapshot, fitness?: FitnessResult | null): Records {
+  if (fitness && !hasFitness(r, fitness.id)) {
+    s = { ...s, fitness: { result: fitness, flags: checkFitness(fitness, s.ctx.env) } }
+  }
   const snapshots = [...r.snapshots, s].slice(-MAX_SNAPSHOTS)
   return { ...r, snapshots }
 }

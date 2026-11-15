@@ -12,6 +12,7 @@ import {
   type Snapshot,
 } from '../lib/records'
 import type { FhirObservation, PlanId } from '../lib/exercise'
+import type { FitnessResult } from '../lib/fitness'
 import type { SleepMood, SleepObservation } from '../lib/sleep'
 
 /** 紀錄狀態：載入一次、每次變更就寫回 localStorage（src/lib/records.ts） */
@@ -24,7 +25,11 @@ export function useRecords() {
     setSaveOk(saveRecords(records))
   }, [records])
 
-  const add = useCallback((s: Snapshot) => setRecords((r) => addSnapshot(r, s)), [])
+  /** fitness：目前收到的最新適任測驗結果；還沒記過的話會附在這一筆上（lib/fitness.ts） */
+  const add = useCallback(
+    (s: Snapshot, fitness?: FitnessResult | null) => setRecords((r) => addSnapshot(r, s, fitness)),
+    [],
+  )
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setRecords((r) => {

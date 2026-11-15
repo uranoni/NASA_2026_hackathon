@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import type { Level } from '../../lib/assessment'
+import type { FitnessResult } from '../../lib/fitness'
 import { MAX_SNAPSHOTS, SNAPSHOT_EVERY_MS, type Records } from '../../lib/records'
 
 type Props = {
@@ -18,6 +19,19 @@ const LV_COLOR: Record<Level | 'info', string> = {
 }
 const LV_TEXT: Record<Level, string> = { ok: 'OK', warn: 'CAUTION', bad: 'WARNING' }
 const ENV_SHORT = { iss: 'ISS', transit: 'TRANSIT', moon: 'MOON', mars: 'MARS', ground: 'GROUND' } as const
+/** 被標示給地面的紀錄：caution 黃色底與左邊框 */
+const FLAG_ROW = 'border-[#ffd23f]/40 bg-[#ffd23f]/10'
+const FLAG_EDGE = 'border-l-4 border-l-[#ffd23f]'
+
+/** 適任測驗結果的簡短摘要（有哪些就列哪些） */
+function fitnessSummary(f: FitnessResult) {
+  const parts: string[] = []
+  if (f.vo2max != null) parts.push(`VO₂max ${f.vo2max}`)
+  if (f.strengthPct != null) parts.push(`STR ${f.strengthPct}%`)
+  if (f.bmdPct) parts.push('BMD')
+  return `MD${f.day} ${parts.join(' · ')}`
+}
+
 /** 顯示最近幾筆（全部都有存，只是畫面不列太多） */
 const SHOW = 30
 
@@ -53,6 +67,7 @@ export function RecordsPanel({ records, saveOk, onSaveNow, onClear, onClose }: P
 
   const snaps = records.snapshots
   const recent = snaps.slice(-SHOW).reverse()
+  const flaggedCount = snaps.filter((s) => (s.fitness?.flags.length ?? 0) > 0).length
   const tm = (iso: string) => new Date(iso).toLocaleString('en-GB', { hour12: false })
   const sizeKb = (() => {
     try {
@@ -84,6 +99,11 @@ export function RecordsPanel({ records, saveOk, onSaveNow, onClear, onClose }: P
               Saved in this browser only (localStorage). Saves one on first open (when there are no records yet), then every {SNAPSHOT_EVERY_MS / 60000} min; keeps the latest{' '}
               {MAX_SNAPSHOTS}. Mission settings are saved too.
             </p>
+            {flaggedCount > 0 && (
+              <p className="mt-1 text-[11px] text-[#ffd23f]">
+                ▲ {flaggedCount} record{flaggedCount === 1 ? '' : 's'} flagged for ground: fitness-for-duty requirement not met (NASA-STD-3001 Vol 1)
+              </p>
+            )}
             {!saveOk && (
               <p className="mt-1 text-[11px] text-[#ff2a55]">■ Could not save to this browser (storage full or blocked). See console for details.</p>
             )}
@@ -105,7 +125,7 @@ export function RecordsPanel({ records, saveOk, onSaveNow, onClear, onClose }: P
             <table className="w-full text-left text-[11px]" style={{ fontFamily: 'var(--font-mono)' }}>
               <thead className="sticky top-0 bg-[#020617] text-[10px] tracking-wider text-cyan-300/70">
                 <tr>
-                  {['TIME', 'DAY · LOC', 'HR', 'BP', 'SpO₂', 'TEMP', 'SLEEP', 'STATUS', 'CABIN CO₂'].map((h) => (
+                  {['TIME', 'DAY · LOC', 'HR', 'BP', 'SpO₂', 'TEMP', 'SLEEP', 'STATUS', 'CABIN CO₂', 'FITNESS'].map((h) => (
                     <th key={h} className="px-2 py-1.5 font-normal">
                       {h}
                     </th>
@@ -113,9 +133,15 @@ export function RecordsPanel({ records, saveOk, onSaveNow, onClear, onClose }: P
                 </tr>
               </thead>
               <tbody>
-                {recent.map((s) => (
-                  <tr key={s.t} className="border-t border-cyan-400/10 text-cyan-100/85">
-                    <td className="whitespace-nowrap px-2 py-1">{tm(s.t)}</td>
+                {recent.map((s) => {
+                  const flags = s.fitness?.flags ?? []
+                  const flagged = flags.length > 0
+                  return (
+                  <Fragment key={s.t}>
+                  <tr
+                    className={`border-t text-cyan-100/85 ${flagged ? FLAG_ROW : 'border-cyan-400/10'}`}
+                  >
+                    <td className={`whitespace-nowrap px-2 py-1 ${flagged ? FLAG_EDGE : ''}`}>{tm(s.t)}</td>
                     <td className="whitespace-nowrap px-2 py-1">
                       {s.ctx.day} · {ENV_SHORT[s.ctx.env]}
                     </td>
@@ -133,8 +159,32 @@ export function RecordsPanel({ records, saveOk, onSaveNow, onClear, onClose }: P
                     <td className="whitespace-nowrap px-2 py-1">
                       {s.cabin?.values.co2 != null ? `${s.cabin.values.co2}${s.cabin.stale ? ' (stale)' : ''}` : '—'}
                     </td>
+                    <td className={`whitespace-nowrap px-2 py-1 ${flagged ? 'text-[#ffd23f]' : ''}`} title={s.fitness?.result.source}>
+                      {s.fitness ? fitnessSummary(s.fitness.result) : '—'}
+                    </td>
                   </tr>
-                ))}
+                  {flagged && (
+                    // 不符合 NASA-STD-3001 Vol 1 適任規定：標示給地面特別處置。
+                    // 用 caution 黃色（需要注意、不是立即動作，3001 Vol 2 表 F.5-1），並附圖示和文字，顏色不是唯一提示 [V2 10045]
+                    <tr className={FLAG_ROW}>
+                      <td colSpan={10} className={`px-2 pb-2 pt-0.5 ${FLAG_EDGE}`}>
+                        <p className="text-[10px] tracking-[0.18em] text-[#ffd23f]" style={{ fontFamily: 'var(--font-display)' }}>
+                          ▲ FLAG FOR GROUND · special handling needed (fitness for duty)
+                        </p>
+                        <ul className="mt-0.5 space-y-0.5">
+                          {flags.map((f) => (
+                            <li key={f.req} className="text-[11px] text-[#ffe58a]" title={`NASA-STD-3001 Vol 1 Rev C [${f.req}]: "${f.quote}"`}>
+                              [{f.req}] {f.text}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-0.5 text-[10px] text-cyan-200/50">{s.fitness?.result.source} · hover a line for the requirement text</p>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           )}

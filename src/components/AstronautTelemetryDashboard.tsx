@@ -5,7 +5,8 @@ import { useTelemetry } from '../hooks/useTelemetry'
 import { evalEnv, evaluate, REGION_NAME, type Context, type Region } from '../lib/assessment'
 import { exerciseObservation, weekStatus, type PlanId } from '../lib/exercise'
 import { sleepObservation } from '../lib/sleep'
-import { dayKey, lastExerciseAt, makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
+import { DEMO_FITNESS } from '../lib/fitness'
+import { dayKey, hasFitness, lastExerciseAt, makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
 import { DailyTasksPanel } from './hud/DailyTasksPanel'
 import { ExerciseDialog } from './hud/ExerciseDialog'
 import type { OrganId, TelemetrySource } from '../types/telemetry'
@@ -106,17 +107,20 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   const { add: addSnapshot } = rec
   // 瀏覽器裡還沒有任何快照時，打開頁面就先存一筆（使用者要求）；之後每 SNAPSHOT_EVERY_MS 一筆。
   // 載入當下有沒有快照只看一次（firstOpen）；開發模式 StrictMode 會把 effect 跑兩次，ref 在兩次之間保留，所以不會存兩筆
-  const firstOpen = useRef(rec.records.snapshots.length === 0)
+  // 收到新的適任測驗結果（還沒記在任何一筆紀錄上）時，也立刻存一筆，把結果附在那一筆上（lib/fitness.ts）
+  const firstOpen = useRef(rec.records.snapshots.length === 0 || !hasFitness(rec.records, DEMO_FITNESS.id))
   useEffect(() => {
     if (firstOpen.current) {
       firstOpen.current = false
-      addSnapshot(snapRef.current())
-      console.log('[records]', '瀏覽器裡還沒有紀錄，已存第一筆快照（ISS 艙內資料通常還沒收到，這筆多半沒有艙內數值）')
+      addSnapshot(snapRef.current(), DEMO_FITNESS)
+      console.log('[records]', '已存一筆快照（第一次開啟，或收到新的適任測驗結果）')
     }
-    const id = window.setInterval(() => addSnapshot(snapRef.current()), SNAPSHOT_EVERY_MS)
+    const id = window.setInterval(() => addSnapshot(snapRef.current(), DEMO_FITNESS), SNAPSHOT_EVERY_MS)
     return () => window.clearInterval(id)
   }, [addSnapshot])
 
+  /** 不符合適任規定、被標示給地面的紀錄數（lib/fitness.ts） */
+  const flaggedRecords = rec.records.snapshots.filter((s) => (s.fitness?.flags.length ?? 0) > 0).length
   const badRegions = (Object.keys(assessment.level) as Region[]).filter((k) => assessment.level[k] === 'bad')
   const alertActive = data.emergency || assessment.overall === 'bad'
 
@@ -222,7 +226,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
       {/* 底部控制列 */}
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center p-4 md:p-5">
         <div className="pointer-events-auto hud-glass hud-corner relative flex flex-wrap items-center justify-center gap-2 px-3 py-2.5 md:gap-3 md:px-4">
-          <ControlButton label={`RECORDS (${rec.records.snapshots.length})`} onClick={() => setRecordsOpen(true)} />
+          <ControlButton label={`RECORDS (${rec.records.snapshots.length})${flaggedRecords ? ` · ▲ ${flaggedRecords} FLAGGED` : ''}`} onClick={() => setRecordsOpen(true)} />
           <ControlButton
             label="RESET VIEW"
             onClick={() => {
