@@ -10,7 +10,6 @@ type Props = {
   assessment: Assessment
   ctx: Context
   /** 建議旁的快捷按鈕：帶入運動課表 A／B */
-  onSuggestPlan: (plan: 'A' | 'B') => void
 }
 
 /** 狀態色依 3001 Vol 2 表 F.5-1（黃＝注意、紅＝警告），另附文字與符號，顏色不是唯一提示 [V2 10045] */
@@ -36,7 +35,7 @@ function MetricRow({ label, value, vit }: { label: string; value: string; vit?: 
   )
 }
 
-export function RightPanel({ data, selected, assessment: a, ctx, onSuggestPlan }: Props) {
+export function RightPanel({ data, selected, assessment: a, ctx }: Props) {
   const organ = selected ? ORGAN_META[selected] : null
   const v = a.vit
 
@@ -142,15 +141,8 @@ export function RightPanel({ data, selected, assessment: a, ctx, onSuggestPlan }
                   {x.to === 'self' ? 'SELF' : 'GROUND'}
                 </span>
                 {LV_MARK[x.lv]} {x.text}
-                {x.action && (
-                  <button
-                    type="button"
-                    onClick={() => onSuggestPlan(x.action!.plan)}
-                    className="mt-1.5 block w-full rounded-sm border border-[#ffd23f]/70 bg-[#ffd23f]/10 px-2 py-1.5 text-left text-[11px] text-[#ffd23f] hover:bg-[#ffd23f]/20"
-                  >
-                    {x.action.label}
-                  </button>
-                )}
+                {/* 課表按鈕不放右側（使用者要求），只提示到左上 DAILY TASKS 開清單 */}
+                {x.action && <span className="mt-1 block text-[11px] text-[#ffd23f]">→ {x.action.label} · open DAILY TASKS (top left)</span>}
               </li>
             ))}
           </ul>

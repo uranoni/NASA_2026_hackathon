@@ -19,7 +19,9 @@ export type Activity = 'rest' | 'work' | 'exercise' | 'critical' | 'eva' | 'eva_
 export type MissionEnv = 'iss' | 'transit' | 'moon' | 'mars' | 'ground'
 export type Context = { day: number; env: MissionEnv; act: Activity }
 
-export type Finding = { level: Level; text: string; src: string }
+/** 四肢分上下：upper＝雙上臂、lower＝雙小腿（3D 熱點見 OrganModules 的 LIMB_SPOTS）；沒標 part 的四肢判斷算兩半都有 */
+export type LimbPart = 'upper' | 'lower'
+export type Finding = { level: Level; text: string; src: string; part?: LimbPart }
 /** action：建議旁邊的快捷按鈕（目前只有「帶入運動課表 A／B」） */
 export type Advice = { lv: Level; to: 'self' | 'ground'; text: string; action?: { kind: 'exercise'; plan: 'A' | 'B'; label: string } }
 /** 每個量測項目的狀態（主畫面卡片用）；dir＝超出上限 hi／下限 lo，數值後顯示 ↑↓（F.4.3.1） */
@@ -99,6 +101,8 @@ export type ManualInput = {
 export type Assessment = {
   body: Record<Region, Finding[]>
   level: Record<Region, Level>
+  /** 四肢上下半各自的等級（只給 3D 熱點變色用；面板仍顯示在 limbs 底下） */
+  limbParts: Record<LimbPart, Level>
   advice: Advice[]
   vit: Partial<Record<VitalKey, Vital>>
   overall: Level
@@ -191,7 +195,7 @@ const ACT_NAME: Record<Activity, string> = {
   eva_active: 'EVA',
 }
 
-type Add = (reg: Region, lv: Level, text: string, src: string) => void
+type Add = (reg: Region, lv: Level, text: string, src: string, part?: LimbPart) => void
 type AddAdvice = (lv: Level, to: Advice['to'], text: string, first?: boolean, action?: Advice['action']) => void
 
 // ===================== 評估：環境（只給左下角面板，不影響人體燈號） =====================
@@ -550,7 +554,7 @@ function evalManual(
   if (m.swell) {
     const where: Region = m.swell === 'neck' ? 'neck' : 'limbs',
       w = m.swell
-    add(where, 'warn', `One-sided ${w} swelling: possible venous clot`, 'Self-report')
+    add(where, 'warn', `One-sided ${w} swelling: possible venous clot`, 'Self-report', w === 'arm' ? 'upper' : w === 'leg' ? 'lower' : undefined)
     A('warn', 'self', 'Schedule an ultrasound')
     A('warn', 'ground', `One-sided ${w} swelling: notify the flight surgeon (the 2020 clot had no symptoms and was found by ultrasound)`)
     setV('clot', 'warn', 'Needs follow-up')
@@ -595,23 +599,36 @@ function evalManual(
   if (m.exercise_done === false) {
     const src = 'Demo-defined; 6 days/week per NASA/SP-20250000273, effects per OCHMO-TB-031'
     const wk = m.exercise_week != null ? ` (${m.exercise_week}/6 sessions in the last 7 days)` : ''
-    // 缺哪一塊：最近 7 天沒做過 A＝下肢、沒做過 B＝上肢（gemini 檔的「偵測到缺乏上肢或下肢訓練」）
-    const gaps = [m.exercise_doneA === false && 'lower-body (Plan A)', m.exercise_doneB === false && 'upper-body (Plan B)'].filter(Boolean)
-    const gapTxt = gaps.length ? `; no ${gaps.join(' or ')} training in the last 7 days` : ''
-    add('limbs', 'warn', `No training today and this week's rest day is used${wk}${gapTxt}: bone and muscle loading missed`, src)
+    // 四肢分上下（使用者要求）：最近 7 天沒做過 B＝缺上肢 → 上臂亮黃燈、建議 Plan B；沒做過 A＝缺下肢 → 小腿亮黃燈、建議 Plan A
+    // 兩份最近 7 天都做過（只是今天沒做且休息日已用掉）→ 亮「建議的那份」對應的那一半（比較久沒做的那份）
+    const missLower = m.exercise_doneA === false,
+      missUpper = m.exercise_doneB === false
+    const suggest = m.exercise_suggest ?? 'A'
+    const parts: LimbPart[] = []
+    if (missLower) parts.push('lower')
+    if (missUpper) parts.push('upper')
+    if (!parts.length) parts.push(suggest === 'A' ? 'lower' : 'upper')
+    const PART: Record<LimbPart, { name: string; plan: 'A' | 'B'; label: string }> = {
+      lower: { name: 'Lower limbs', plan: 'A', label: '💡 Suggested: Plan A (lower-body bone protection + aerobic)' },
+      upper: { name: 'Upper limbs', plan: 'B', label: '💡 Suggested: Plan B (upper-body strength + cardio)' },
+    }
+    for (const p of parts) {
+      const miss = p === 'lower' ? missLower : missUpper
+      const why = miss ? `no ${p}-body (Plan ${PART[p].plan}) training in the last 7 days` : `Plan ${PART[p].plan} is the longest since last done`
+      add('limbs', 'warn', `${PART[p].name}: ${why}; no training today and this week's rest day is used${wk}`, src, p)
+    }
     add('heart', 'warn', `No training today and this week's rest day is used${wk}: cardiovascular deconditioning risk`, src)
     add('whole', 'warn', `Below the 6-days-a-week exercise plan${wk}`, src)
-    const plan = m.exercise_suggest ?? 'A'
-    A(
-      'warn',
-      'self',
-      `No resistive or aerobic training reported today, and this week's rest day is already used${wk}. Without training, bone density can drop as much as 0.5–1.5% per month [NASA/SP-20250000273], and aerobic capacity, muscle strength and sensorimotor function decline [OCHMO-TB-031]. Do today’s training plan soon to stay fit for duty`,
-      false,
-      {
-        kind: 'exercise',
-        plan,
-        label: plan === 'A' ? '💡 Suggested: Plan A (lower-body bone protection + aerobic)' : '💡 Suggested: Plan B (upper-body strength + cardio)',
-      },
+    parts.forEach((p, i) =>
+      A(
+        'warn',
+        'self',
+        i === 0
+          ? `No resistive or aerobic training reported today, and this week's rest day is already used${wk}. Without training, bone density can drop as much as 0.5–1.5% per month [NASA/SP-20250000273], and aerobic capacity, muscle strength and sensorimotor function decline [OCHMO-TB-031]. ${PART[p].name} need it most: do Plan ${PART[p].plan} soon to stay fit for duty`
+          : `${PART[p].name} also missed training in the last 7 days: Plan ${PART[p].plan} next`,
+        false,
+        { kind: 'exercise', plan: PART[p].plan, label: PART[p].label },
+      ),
     )
   }
   // EVA
@@ -644,7 +661,7 @@ export function evaluate(c: Context, m: ManualInput): Assessment {
   const body = Object.fromEntries(REGIONS.map((k) => [k, [] as Finding[]])) as Record<Region, Finding[]>
   const advice: Advice[] = [],
     vit: Partial<Record<VitalKey, Vital>> = {}
-  const add: Add = (reg, lv, text, src) => body[reg].push({ level: lv, text, src })
+  const add: Add = (reg, lv, text, src, part) => body[reg].push(part ? { level: lv, text, src, part } : { level: lv, text, src })
   const A: AddAdvice = (lv, to, text, first, action) => {
     const x: Advice = action ? { lv, to, text, action } : { lv, to, text }
     if (first) advice.unshift(x)
@@ -658,11 +675,13 @@ export function evaluate(c: Context, m: ManualInput): Assessment {
   >
   let overall = Object.values(level).reduce(worse, 'ok')
   overall = advice.reduce<Level>((a, x) => worse(a, x.lv), overall)
+  const partLevel = (skip: LimbPart) => body.limbs.filter((f) => f.part !== skip).reduce<Level>((a, x) => worse(a, x.level), 'ok')
+  const limbParts: Record<LimbPart, Level> = { upper: partLevel('lower'), lower: partLevel('upper') }
   overall = Object.values(vit).reduce<Level>((a, x) => worse(a, x.lv === 'info' ? 'ok' : x.lv), overall)
   const hasData = Object.keys(vit).length > 0 || advice.length > 0
   if (overall === 'bad' && c.act === 'critical') A('bad', 'self', 'Pause or postpone critical tasks', true)
   advice.sort((a, b) => rank(b.lv) - rank(a.lv)) // 嚴重的排前面（sort 是穩定排序，同等級維持原順序）
-  return { body, level, advice, vit, overall, hasData, R }
+  return { body, level, limbParts, advice, vit, overall, hasData, R }
 }
 
 /** 任務環境名稱（新版 envIss 等，翻成英文） */

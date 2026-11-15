@@ -123,13 +123,43 @@ export function weekStatus(checkins: Record<string, ExerciseCheckin>, now = new 
   }
 }
 
+/**
+ * 訓練清單勾選暫存（使用者要求：勾到一半關掉清單或重新整理都不會不見）。
+ * - 存在 localStorage `astroHealth.exerciseDraft.v1`，A、B 各自記，切換課表不會清掉另一份
+ * - 只保留當天：日期不同就當作沒有暫存（新的一天重新勾）
+ * - 回報、RESET TODAY 都不清暫存；讀寫失敗只記 console，清單照常可用（只是不會記住）
+ */
+const DRAFT_KEY = 'astroHealth.exerciseDraft.v1'
+export type ExerciseDraft = { date: string; plan: PlanId; checked: Record<PlanId, string[]> }
+
+export function loadDraft(now = new Date()): ExerciseDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const d = JSON.parse(raw) as ExerciseDraft
+    if (d?.date !== key(now) || (d.plan !== 'A' && d.plan !== 'B') || !Array.isArray(d.checked?.A) || !Array.isArray(d.checked?.B)) return null
+    return d
+  } catch (e) {
+    console.warn('[exercise] 讀取勾選暫存失敗，改用空白清單', e)
+    return null
+  }
+}
+
+export function saveDraft(plan: PlanId, checked: Record<PlanId, string[]>, now = new Date()) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ date: key(now), plan, checked } satisfies ExerciseDraft))
+  } catch (e) {
+    console.warn('[exercise] 勾選暫存寫入失敗（重新整理後不會記住）', e)
+  }
+}
+
 /** 「為什麼要做」說明（訓練清單的 WHY） */
 export const EXERCISE_WHY = [
   'ISS plan: about 2.5 h a day, 6 days a week (including setup and cleanup), with 30–60 min resistive training (ARED) and an average 27 min aerobic training (CEVIS, T2) at 70–100% of pre-flight VO₂peak [NASA/SP-20250000273, Table 5]. One rest day a week is normal.',
   'Bone mineral density can drop as much as 0.5–1.5% per month in spaceflight, and extensor and flexor muscles may lose up to 30% isokinetic torque on long missions [NASA/SP-20250000273].',
   'Spaceflight lowers aerobic capacity, muscle strength and bone strength; exercise is also a countermeasure for orthostatic intolerance and immune and sensorimotor function [OCHMO-TB-031].',
   'NASA-STD-3001 Vol 1 targets: aerobic capacity ≥80% of pre-mission [V1 4003], muscle strength ≥80% of baseline [V1 4024], hip and spine bone density ≥95% [V1 4027] [OCHMO-TB-031].',
-  'Plan A / Plan B rotation, sets and reps are a demo routine, not a NASA prescription (all movements are on the ARED critical exercise list, NASA/SP-20250000273 Table 7); real sessions follow each crewmember’s plan. You do not need to finish every item: check what you did and report the session.',
+  'Plan A / Plan B rotation, sets and reps are a demo routine, not a NASA prescription (all movements are on the ARED critical exercise list, NASA/SP-20250000273 Table 7); real sessions follow each crewmember’s plan. Check every item of the plan to complete the session; your checks are kept for today even if you close the list.',
 ]
 
 const LOCAL = 'urn:spaceapps:astro-health'

@@ -35,8 +35,8 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   /** 紀錄（localStorage）：任務設定、生命徵象與艙內快照；見 src/lib/records.ts */
   const rec = useRecords()
   const [recordsOpen, setRecordsOpen] = useState(false)
-  /** 訓練清單：null＝關閉；plan＝開哪份；prefill＝從建議按鈕進來，先勾好整份 */
-  const [exerciseOpen, setExerciseOpen] = useState<null | { plan: PlanId; prefill: boolean }>(null)
+  /** 訓練清單：null＝關閉；plan＝開哪份（勾選由清單自己暫存，不再預先勾好） */
+  const [exerciseOpen, setExerciseOpen] = useState<null | { plan: PlanId }>(null)
   // 運動回報：每週 6 天規則（每分鐘重算一次，跨過午夜會自動換日）
   const [nowTick, setNowTick] = useState(() => Date.now())
   useEffect(() => {
@@ -153,6 +153,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           emergency={data.emergency}
           resetToken={resetToken}
           levels={assessment.level}
+          limbParts={assessment.limbParts}
           alert={alertActive}
         />
       </div>
@@ -181,7 +182,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
         <div className="pointer-events-auto">
           <DailyTasksPanel
             week={week}
-            onOpenExercise={() => setExerciseOpen({ plan: week.nextPlan, prefill: !week.todayDone })}
+            onOpenExercise={() => setExerciseOpen({ plan: week.nextPlan })}
             sleepMood={sleepMood}
             onSleep={(mood) => {
               const now = new Date()
@@ -200,7 +201,6 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           selected={selected}
           assessment={assessment}
           ctx={ctx}
-          onSuggestPlan={(plan) => setExerciseOpen({ plan, prefill: true })}
         />
       </div>
 
@@ -248,10 +248,9 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
 
       {exerciseOpen && (
         <ExerciseDialog
-          key={`${exerciseOpen.plan}-${exerciseOpen.prefill}`}
+          key={exerciseOpen.plan}
           week={week}
           initialPlan={exerciseOpen.plan}
-          prefill={exerciseOpen.prefill}
           reportedItems={rec.records.checkins[dayKey(new Date(nowTick))]?.exercise_items ?? null}
           lastAt={lastExercise}
           onReport={(plan, items) => {

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { EXERCISE_WHY, PLANS, WEEKLY_TARGET, type PlanId, type WeekStatus } from '../../lib/exercise'
+import { EXERCISE_WHY, loadDraft, PLANS, saveDraft, WEEKLY_TARGET, type PlanId, type WeekStatus } from '../../lib/exercise'
 
 type Props = {
   week: WeekStatus
-  /** 開啟時顯示哪份課表；prefill＝從「建議」按鈕進來，先把整份課表勾好，按一下就能完成（gemini 檔的一鍵帶入） */
+  /** 開啟時顯示哪份課表（今天有勾選暫存時，改用暫存裡最後看的那份） */
   initialPlan: PlanId
-  prefill: boolean
   /** 今天已回報時，回報過的項目（打開時照實勾好、唯讀；要重做請用左上的 RESET TODAY） */
   reportedItems: string[] | null
   lastAt: string | null
@@ -14,17 +13,26 @@ type Props = {
 }
 
 /**
- * 本日訓練（SOP 檢查表樣式）：A／B 日輪替（示範課表），清單只是提示，不必全部做完；勾選做了的項目後回報。
+ * 本日訓練（SOP 檢查表樣式）：A／B 日輪替（示範課表）。整份課表全部勾完才能完成（使用者要求）。
+ * 勾選會暫存（見 exercise.ts loadDraft／saveDraft），關掉清單或重新整理都還在。
  * 回報後寫入今日打卡 exercise_done = true，並放進傳回地面的 FHIR 佇列（由呼叫端處理）。
  */
-export function ExerciseDialog({ week, initialPlan, prefill, reportedItems, lastAt, onReport, onClose }: Props) {
+export function ExerciseDialog({ week, initialPlan, reportedItems, lastAt, onReport, onClose }: Props) {
   const readOnly = week.todayDone && reportedItems != null
-  // 預設顯示建議的課表；可以手動切換
-  const [plan, setPlan] = useState<PlanId>(initialPlan)
-  const [checked, setChecked] = useState<string[]>(() =>
-    readOnly ? reportedItems! : prefill ? PLANS[initialPlan].items.map((it) => it.id) : [],
-  )
+  const [draft] = useState(() => (readOnly ? null : loadDraft()))
+  const [plan, setPlan] = useState<PlanId>(() => draft?.plan ?? initialPlan)
+  // A、B 各自記勾選；已回報時照實顯示回報的項目（唯讀）
+  const [checkedBy, setCheckedBy] = useState<Record<PlanId, string[]>>(() => {
+    if (readOnly) return { A: [], B: [], [plan]: reportedItems! }
+    return draft?.checked ?? { A: [], B: [] }
+  })
+  const checked = checkedBy[plan]
   const items = PLANS[plan].items
+  const update = (p: PlanId, next: Record<PlanId, string[]>) => {
+    setPlan(p)
+    setCheckedBy(next)
+    saveDraft(p, next)
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -34,14 +42,14 @@ export function ExerciseDialog({ week, initialPlan, prefill, reportedItems, last
 
   const toggle = (id: string) => {
     if (readOnly) return
-    setChecked((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))
+    update(plan, { ...checkedBy, [plan]: checked.includes(id) ? checked.filter((x) => x !== id) : [...checked, id] })
   }
   const switchPlan = (p: PlanId) => {
     if (readOnly) return
-    setPlan(p)
-    setChecked([])
+    update(p, checkedBy)
   }
   const doneIds = checked.filter((id) => items.some((it) => it.id === id))
+  const allDone = doneIds.length === items.length
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-40 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
@@ -148,11 +156,15 @@ export function ExerciseDialog({ week, initialPlan, prefill, reportedItems, last
         <div className="mt-3 flex items-center justify-between gap-3">
           <p className="text-[10px] text-cyan-200/50">
             {doneIds.length}/{items.length} checked
-            {readOnly ? ' · reported today (use RESET TODAY to redo)' : doneIds.length === 0 && ' · check what you did'}
+            {readOnly
+              ? ' · reported today (use RESET TODAY to redo)'
+              : allDone
+                ? ' · all done'
+                : ` · check all ${items.length} to complete (saved)`}
           </p>
           <button
             type="button"
-            disabled={readOnly || doneIds.length === 0}
+            disabled={readOnly || !allDone}
             onClick={() => onReport(plan, doneIds)}
             className="rounded-sm border border-cyan-300 bg-cyan-400/15 px-3 py-1.5 text-[11px] tracking-[0.15em] text-cyan-50 transition hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:border-cyan-400/25 disabled:bg-transparent disabled:text-cyan-100/40"
             style={{ fontFamily: 'var(--font-display)' }}

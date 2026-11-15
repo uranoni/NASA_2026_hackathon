@@ -2,7 +2,7 @@ import { Html, Line, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
-import type { Level, Region } from '../../lib/assessment'
+import type { LimbPart, Level, Region } from '../../lib/assessment'
 import { ORGAN_META, type OrganId } from '../../types/telemetry'
 
 type Metrics = {
@@ -18,6 +18,8 @@ type Props = {
   onSelect: (id: OrganId) => void
   /** 各部位判斷結果（src/lib/assessment.ts）：warn＝黃、bad＝紅 */
   levels: Record<Region, Level>
+  /** 四肢上下半各自的等級（上臂＝upper、小腿＝lower），見 assessment.limbParts */
+  limbParts: Record<LimbPart, Level>
 }
 
 /**
@@ -325,11 +327,11 @@ function LimbSegment({ color, selected }: { color: string; selected: boolean }) 
  * 四肢熱點（點任何一個都選到 limbs）。座標由模型頂點量測：
  * 雙臂為 A 字姿勢，上臂中段約 (±0.31, 1.18)，傾斜約 0.38 rad；小腿中段約 (±0.11, 0.36)
  */
-const LIMB_SPOTS: { position: [number, number, number]; tilt: number }[] = [
-  { position: [-0.31, 1.18, 0.0], tilt: -0.38 },
-  { position: [0.31, 1.18, 0.0], tilt: 0.38 },
-  { position: [-0.11, 0.36, -0.05], tilt: 0 },
-  { position: [0.11, 0.36, -0.05], tilt: 0 },
+const LIMB_SPOTS: { position: [number, number, number]; tilt: number; part: LimbPart }[] = [
+  { position: [-0.31, 1.18, 0.0], tilt: -0.38, part: 'upper' },
+  { position: [0.31, 1.18, 0.0], tilt: 0.38, part: 'upper' },
+  { position: [-0.11, 0.36, -0.05], tilt: 0, part: 'lower' },
+  { position: [0.11, 0.36, -0.05], tilt: 0, part: 'lower' },
 ]
 
 function FloatingLabel({
@@ -388,7 +390,7 @@ function FloatingLabel({
 
 const LEVEL_TONE: Record<Level, Status> = { ok: 'normal', warn: 'caution', bad: 'warning' }
 
-export function OrganModules({ metrics, selected, onSelect, levels }: Props) {
+export function OrganModules({ metrics, selected, onSelect, levels, limbParts }: Props) {
   const heartRef = useRef<THREE.Group>(null)
   const lungsRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState<OrganId | null>(null)
@@ -405,7 +407,9 @@ export function OrganModules({ metrics, selected, onSelect, levels }: Props) {
   // 異常的部位不用選取也維持高亮，一眼看出是哪裡出事
   const lit = (id: OrganId) => selected === id || abnormal(id)
   const heartLit = lit('heart')
-  const limbsLit = lit('limbs')
+  // 四肢分上下（使用者要求）：缺上肢訓練只亮上臂、缺下肢只亮小腿；選取 limbs 時四個都亮
+  const partColor = (p: LimbPart) => organTone(LEVEL_TONE[limbParts[p]])
+  const partLit = (p: LimbPart) => selected === 'limbs' || limbParts[p] !== 'ok'
 
   /**
    * 暫時解法：預設選取心臟時，重整後只出現連接線、沒有數值框；重新點一次就正常。
@@ -522,8 +526,8 @@ export function OrganModules({ metrics, selected, onSelect, levels }: Props) {
 
       {LIMB_SPOTS.map((spot) => (
         <group key={spot.position.join(',')} position={spot.position} rotation={[0, 0, spot.tilt]}>
-          <LimbSegment color={limbsColor} selected={limbsLit} />
-          <SelectRing color={limbsColor} visible={selected === 'limbs'} radius={0.06} />
+          <LimbSegment color={partColor(spot.part)} selected={partLit(spot.part)} />
+          <SelectRing color={partColor(spot.part)} visible={selected === 'limbs'} radius={0.06} />
           <HitProxy id="limbs" onSelect={onSelect} onHover={setHovered} radius={0.07} />
         </group>
       ))}
