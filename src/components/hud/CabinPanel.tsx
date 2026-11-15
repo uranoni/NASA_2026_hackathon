@@ -22,7 +22,9 @@ const LV = {
   ok: { color: 'text-cyan-100', dot: 'bg-emerald-400', tag: 'OK' },
   warn: { color: 'text-[#ffd23f]', dot: 'bg-[#ffd23f]', tag: 'CAUTION' },
   bad: { color: 'text-[#ff2a55]', dot: 'bg-[#ff2a55]', tag: 'WARNING' },
-} satisfies Record<Level, { color: string; dot: string; tag: string }>
+  // 清水槽沒有公開門檻，只顯示數值（新版原則）
+  info: { color: 'text-cyan-100', dot: 'bg-slate-500', tag: 'INFO' },
+} satisfies Record<Level | 'info', { color: string; dot: string; tag: string }>
 
 const SHORT_NAME: Record<EnvCard['key'], string> = {
   co2: 'CO2',
@@ -122,7 +124,7 @@ export function CabinPanel({ env, onEnv, cards, status, sim, onSim }: Props) {
         ))}
       </div>
       <p className="mt-1.5 text-[9px] leading-snug text-cyan-200/40">
-        Thresholds: NASA-STD-3001 Vol 2 Rev F, OCHMO-TB-003 / TB-004. Hover a reading for limits and sources.
+        Thresholds: NASA-STD-3001 Vol 2 Rev F, OCHMO-TB-003 / TB-004. Hover a reading for limits and sources. Cabin readings do not change body status.
       </p>
     </section>
   )

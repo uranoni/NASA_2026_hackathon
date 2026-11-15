@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useCabinTelemetry } from '../hooks/useCabinTelemetry'
 import { useTelemetry } from '../hooks/useTelemetry'
-import { evaluate, REGION_NAME, type Region } from '../lib/assessment'
+import { evalEnv, evaluate, REGION_NAME, type Context, type Region } from '../lib/assessment'
 import type { OrganId, TelemetrySource } from '../types/telemetry'
 import { CabinPanel, type Environment } from './hud/CabinPanel'
 import { RightPanel } from './hud/RightPanel'
@@ -29,28 +29,34 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   const [env, setEnv] = useState<Environment>('iss')
 
   /**
-   * 判斷邏輯移植自 iss_demo.html（src/lib/assessment.ts）。repo 沒有手動輸入，只把遙測裡有的數值填進去：
-   * 心率、血壓、血氧、體溫、睡眠，加上 repo 原有的肌肉疲勞、輻射劑量率。
-   * 情緒（repo 是 0–100，原版是 1–5 分）、輻射（repo 是 mGy/h，原版是 mSv）單位不同，不硬換算，所以情緒不判斷。
-   * 作業模式固定為「一般作業」，repo 沒有切換。
+   * 判斷邏輯移植自新版 iss_demo(1).html（src/lib/assessment.ts）。repo 沒有手動輸入，只把遙測裡有的數值填進去：
+   * 心率、血壓、血氧、體溫、睡眠。
+   * 新版沒有輻射判斷；肌肉疲勞、情緒沒有公開門檻（新版只記錄、不亮燈），而且 repo 的單位（0–100）和新版量表不同，所以不填。
+   * 任務情境暫用新版的預設值：第 45 天、ISS、一般作業（之後的步驟再加設定）。
    */
+  const ctx: Context = { day: 45, env: 'iss', act: 'work' }
   const assessment = useMemo(
     () =>
-      evaluate(env === 'iss' ? cabin.readings() : null, 'work', {
+      evaluate(ctx, {
         hr: data.heartRate,
         sbp: data.bloodPressureSys,
         dbp: data.bloodPressureDia,
         spo2: data.spo2,
         temp: data.coreTemp,
         sleep: data.sleepHours,
-        fatigue: data.muscleFatigue,
-        radMgyH: data.radiationDose,
       }),
-    [cabin.readings, data, env],
+    // ctx 目前是固定值
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data],
+  )
+  // 艙內環境：只給左下角面板顯示，不影響人體燈號（新版原則）
+  const cabinEval = useMemo(
+    () => (env === 'iss' ? evalEnv(cabin.readings(), ctx.act) : { cards: [], advice: [] }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cabin.readings, env],
   )
 
   const badRegions = (Object.keys(assessment.level) as Region[]).filter((k) => assessment.level[k] === 'bad')
-  const badCabin = assessment.cards.filter((c) => c.lv === 'bad')
   const alertActive = data.emergency || assessment.overall === 'bad'
 
   return (
@@ -126,7 +132,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
             console.log('[ISS cabin]', '環境選單切換為：' + e)
             setEnv(e)
           }}
-          cards={assessment.cards}
+          cards={cabinEval.cards}
           status={cabin.status}
           sim={cabin.sim}
           onSim={(s) => {
@@ -164,9 +170,11 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
       {alertActive && (
         <div className="pointer-events-none absolute left-1/2 top-[4.8rem] z-20 -translate-x-1/2">
           <div className="border border-[#ff2a55]/70 bg-[#2a0610]/75 px-4 py-1.5 text-[11px] tracking-[0.28em] text-[#ff2a55] backdrop-blur-md">
-            {badRegions.length || badCabin.length
-              ? `WARNING // ${[...badRegions.map((k) => REGION_NAME[k]), ...badCabin.map((c) => c.name.toUpperCase())].join(' · ')}`
-              : `SIMULATED EMERGENCY // HR ${data.heartRate.toFixed(0)} BPM`}
+            {badRegions.length
+              ? `WARNING // ${badRegions.map((k) => REGION_NAME[k]).join(' · ')}`
+              : data.emergency
+                ? `SIMULATED EMERGENCY // HR ${data.heartRate.toFixed(0)} BPM`
+                : 'WARNING // ACTION NEEDED'}
           </div>
         </div>
       )}
