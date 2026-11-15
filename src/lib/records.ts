@@ -9,7 +9,6 @@
  * 任何失敗都不影響畫面其他功能。
  */
 import type { Activity, Assessment, EnvCard, Level, MissionEnv, VitalKey } from './assessment'
-import { clampDay } from './assessment'
 import type { FhirObservation, PlanId } from './exercise'
 import type { SleepMood, SleepObservation } from './sleep'
 
@@ -66,17 +65,20 @@ export type Records = {
 }
 
 const DEFAULT_SETTINGS: Settings = { day: 45, env: 'iss', cabin: 'iss' }
-const ENVS: MissionEnv[] = ['iss', 'transit', 'moon', 'mars', 'ground']
 
 function log(msg: string, err?: unknown) {
   if (err) console.warn('[records]', msg, err)
   else console.log('[records]', msg)
 }
 
+/**
+ * 任務資訊（第幾天、所在環境）是靜態資訊，由任務決定、畫面上不能輸入。
+ * 一律用任務的固定值，忽略以前版本可以手動輸入時存下的值（不然舊值會卡住改不掉）
+ */
 function cleanSettings(raw: Partial<Settings> | null | undefined): Settings {
   return {
-    day: clampDay(Number(raw?.day) || DEFAULT_SETTINGS.day),
-    env: raw?.env && ENVS.includes(raw.env) ? raw.env : DEFAULT_SETTINGS.env,
+    day: DEFAULT_SETTINGS.day,
+    env: DEFAULT_SETTINGS.env,
     cabin: raw?.cabin === 'none' ? 'none' : 'iss',
   }
 }

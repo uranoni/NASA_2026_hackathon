@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { clampDay, ENV_NAME, type EnvCard, type Level, type MissionEnv } from '../../lib/assessment'
+import { ENV_NAME, type EnvCard, type Level, type MissionEnv } from '../../lib/assessment'
 import type { CabinStatus } from '../../hooks/useCabinTelemetry'
 
 /** 艙內資料選單：none＝面板收起；iss＝顯示 ISS 艙內遙測。和下面的任務環境（影響判斷範圍）是兩件事 */
@@ -8,8 +8,7 @@ const ENV_OPTIONS: { value: Environment; label: string }[] = [
   { value: 'none', label: 'NONE' },
   { value: 'iss', label: 'ISS CABIN' },
 ]
-const MISSION_ENVS: MissionEnv[] = ['iss', 'transit', 'moon', 'mars', 'ground']
-/** 下拉選單用短名稱（完整名稱太長會超出 300px 面板）；完整名稱放在 title，右側面板也會顯示 */
+/** 短名稱（完整名稱太長會超出 300px 面板）；完整名稱放在 title，右側面板也會顯示 */
 const ENV_SHORT: Record<MissionEnv, string> = {
   iss: 'ISS',
   transit: 'MARS TRANSIT',
@@ -22,11 +21,9 @@ const SELECT_CLS =
   'shrink-0 rounded-sm border border-cyan-400/35 bg-[#020617] px-1.5 py-0.5 text-[10px] tracking-wider text-cyan-100 outline-none focus:border-cyan-300'
 
 type Props = {
-  /** 任務第幾天、所在環境：會改變體溫、血壓的判斷範圍（新版設定頁） */
+  /** 任務第幾天、所在環境：會改變體溫、血壓的判斷範圍。靜態任務資訊，只顯示 */
   day: number
-  onDay: (d: number) => void
   missionEnv: MissionEnv
-  onMissionEnv: (e: MissionEnv) => void
   env: Environment
   onEnv: (e: Environment) => void
   cards: EnvCard[]
@@ -59,40 +56,16 @@ function connText(s: CabinStatus) {
   return { text: 'ISS LIVE (ISSLIVE)', dot: 'status-live bg-emerald-400' }
 }
 
-export function CabinPanel({ day, onDay, missionEnv, onMissionEnv, env, onEnv, cards, status }: Props) {
+export function CabinPanel({ day, missionEnv, env, onEnv, cards, status }: Props) {
   const c = connText(status)
   // ISS 訊號中斷時數值可能過舊，依 F.5-1 用青色標示
   const stale = status.signal === false
 
   const header = (
     <div className="space-y-1.5">
-      <Row id="mission-day" label="MISSION DAY">
-        <input
-          id="mission-day"
-          type="number"
-          min={1}
-          max={1200}
-          inputMode="numeric"
-          value={day}
-          onChange={(e) => onDay(clampDay(parseFloat(e.target.value)))}
-          className={`${SELECT_CLS} w-16 text-right`}
-        />
-      </Row>
-      <Row id="mission-env" label="LOCATION">
-        <select
-          id="mission-env"
-          value={missionEnv}
-          onChange={(e) => onMissionEnv(e.target.value as MissionEnv)}
-          className={SELECT_CLS}
-          title={ENV_NAME[missionEnv]}
-        >
-          {MISSION_ENVS.map((k) => (
-            <option key={k} value={k} title={ENV_NAME[k]}>
-              {ENV_SHORT[k]}
-            </option>
-          ))}
-        </select>
-      </Row>
+      {/* 任務資訊是靜態資訊（任務本身決定），只顯示、不能輸入 */}
+      <Info label="MISSION DAY" value={String(day)} />
+      <Info label="LOCATION" value={ENV_SHORT[missionEnv]} title={ENV_NAME[missionEnv]} />
       <Row id="env-select" label="CABIN DATA">
         <select id="env-select" value={env} onChange={(e) => onEnv(e.target.value as Environment)} className={SELECT_CLS}>
           {ENV_OPTIONS.map((o) => (
@@ -159,6 +132,23 @@ export function CabinPanel({ day, onDay, missionEnv, onMissionEnv, env, onEnv, c
         Thresholds: NASA-STD-3001 Vol 2 Rev F, OCHMO-TB-003 / TB-004. Hover a reading for limits and sources. Cabin readings do not change body status.
       </p>
     </section>
+  )
+}
+
+/** 唯讀的任務資訊列 */
+function Info({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3" title={title}>
+      <span
+        className="whitespace-nowrap text-[10px] tracking-[0.22em] text-cyan-300/80"
+        style={{ fontFamily: 'var(--font-display)' }}
+      >
+        {label}
+      </span>
+      <span className="text-[11px] tracking-wider text-cyan-100" style={{ fontFamily: 'var(--font-mono)' }}>
+        {value}
+      </span>
+    </div>
   )
 }
 

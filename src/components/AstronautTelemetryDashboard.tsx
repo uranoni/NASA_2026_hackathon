@@ -208,9 +208,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
       <div className="pointer-events-auto absolute bottom-24 left-4 z-20 md:bottom-6 md:left-6">
         <CabinPanel
           day={settings.day}
-          onDay={(day) => rec.updateSettings({ day })}
           missionEnv={settings.env}
-          onMissionEnv={(e) => rec.updateSettings({ env: e })}
           env={env}
           onEnv={(e) => {
             console.log('[ISS cabin]', '環境選單切換為：' + e)
