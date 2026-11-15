@@ -126,11 +126,11 @@ function SelectRing({
 }
 
 /** 器官模型檔（Grab3D Human Heart，CC0）。檔案不存在或載入失敗時退回幾何形狀 */
-const HEART_GLB_URL = '/models/astronaut-heart.glb'
+const HEART_GLB_URL = 'models/astronaut-heart.glb'
 /** Grab3D Human Lungs（CC0，AI-assisted），實際尺寸 0.235 × 0.147 × 0.300 m */
-const LUNGS_GLB_URL = '/models/astronaut-lungs.glb'
+const LUNGS_GLB_URL = 'models/astronaut-lungs.glb'
 /** Grab3D Human Brain（CC0，AI-assisted），實際尺寸 0.138 × 0.155 × 0.170 m（寬 × 高 × 前後） */
-const BRAIN_GLB_URL = '/models/astronaut-brain.glb'
+const BRAIN_GLB_URL = 'models/astronaut-brain.glb'
 
 /** 載入失敗時顯示 fallback，並在 console 留下原因，不讓整個 3D 場景掛掉 */
 class ModelErrorBoundary extends Component<

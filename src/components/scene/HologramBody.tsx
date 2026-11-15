@@ -11,7 +11,7 @@ type Props = {
 }
 
 /** CC0 真人肌肉模型（Grab3D Human Muscles light），約 1.80 m */
-const DEFAULT_GLB_URL = '/models/astronaut-body.glb'
+const DEFAULT_GLB_URL = 'models/astronaut-body.glb'
 
 function useHologramMaterial(scanEnabled: boolean, alertMix: number) {
   const material = useMemo(() => {

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EVA SUIT TELEMETRY // CREW-01</title>
+    <!--
+      免安裝版本（不需要 Node／npm install）：
+      套件從 CDN 載入，src/ 底下的 TypeScript／TSX 由瀏覽器內的 Babel 即時轉譯。
+      本機啟動：在專案根目錄執行 `python serve.py`，再開 http://127.0.0.1:5174/
+      GitHub Pages：.github/workflows/pages.yml 會把這個檔案當成首頁發佈（不需要 build）。
+      版本與 package-lock.json 相同；改套件版本時兩邊要一起改。
+      所有路徑都用相對路徑，才能在 Pages 的子路徑下運作。
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&display=swap"
+      rel="stylesheet"
+    />
+    <!-- ISS 公開遙測（與 index.html 相同） -->
+    <script src="https://unpkg.com/lightstreamer-client-web@9.2.1/lightstreamer-core.min.js"></script>
+    <!-- Tailwind（與 package-lock 的 tailwindcss 4.3.5 同版） -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.5/dist/index.global.js"></script>
+    <!-- 瀏覽器內轉譯 TypeScript／JSX -->
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.10/babel.min.js"></script>
+    <!-- 套件對照（版本與 package-lock.json 相同；external 讓 React／three 只載入一份） -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19.3.1",
+          "react/": "https://esm.sh/react@19.3.1/",
+          "react-dom": "https://esm.sh/react-dom@19.3.1?external=react",
+          "react-dom/client": "https://esm.sh/react-dom@19.3.1/client?external=react",
+          "three": "https://esm.sh/three@0.181.2",
+          "three/": "https://esm.sh/three@0.181.2/",
+          "three-stdlib": "https://esm.sh/three-stdlib@2.36.1?external=three",
+          "@react-three/fiber": "https://esm.sh/@react-three/fiber@9.8.2?external=react,react-dom,three",
+          "@react-three/drei": "https://esm.sh/@react-three/drei@10.7.9?external=react,react-dom,three,@react-three/fiber,three-stdlib",
+          "@react-three/postprocessing": "https://esm.sh/@react-three/postprocessing@3.2.2?external=react,react-dom,three,@react-three/fiber"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="cdn-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#7fe9ff;font:14px 'Share Tech Mono',monospace;background:#020617">載入中…</div>
+    <script type="module" src="cdn/loader.js"></script>
+  </body>
+</html>

@@ -4,12 +4,33 @@
 
 ## 開發
 
+### 免安裝（不需要 Node／npm）
+
+```bash
+python serve.py
+```
+
+瀏覽：http://127.0.0.1:5174/
+
+`cdn.html` 從 CDN 載入套件（版本與 `package-lock.json` 相同），`src/` 底下的 TypeScript／TSX 由瀏覽器內的 Babel 即時轉譯（`cdn/loader.js`）。改完程式重新整理即可。
+
+### Vite（需要 Node）
+
 ```bash
 npm install
 npm run dev
 ```
 
 瀏覽：http://127.0.0.1:5173/
+
+> 套件版本要改時，`package.json` 和 `cdn.html` 的 importmap 要一起改。
+> 資源路徑請用相對路徑（例如 `models/astronaut-body.glb`，不要 `/models/...`），GitHub Pages 的子路徑才能運作。
+
+## GitHub Pages
+
+推到 `main` 後，`.github/workflows/pages.yml` 會把免安裝版本發佈到 GitHub Pages（只複製檔案，不需要 build）。
+
+第一次使用前，到 Repo **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**。
 
 ---
 
