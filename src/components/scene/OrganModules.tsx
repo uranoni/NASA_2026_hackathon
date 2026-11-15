@@ -20,6 +20,10 @@ type Props = {
   levels: Record<Region, Level>
   /** 四肢上下半各自的等級（上臂＝upper、小腿＝lower），見 assessment.limbParts */
   limbParts: Record<LimbPart, Level>
+  /** 不在 3D 裡畫文字標籤（監測頁把文字搬到 3D 外面顯示）；預設 false，舊 HUD 不受影響 */
+  hideLabels?: boolean
+  /** 滑鼠移到部位上時通知外面（監測頁用來對應外面的清單） */
+  onHoverChange?: (id: OrganId | null) => void
 }
 
 /**
@@ -82,6 +86,8 @@ function HitProxy({
       visible={false}
       onClick={(e) => {
         e.stopPropagation()
+        // 拖曳旋轉放開時也會觸發 click：滑鼠移動超過 4 px 就當作拖曳，不選取
+        if (e.delta > 4) return
         onSelect(id)
       }}
       onPointerOver={(e) => {
@@ -390,10 +396,13 @@ function FloatingLabel({
 
 const LEVEL_TONE: Record<Level, Status> = { ok: 'normal', warn: 'caution', bad: 'warning' }
 
-export function OrganModules({ metrics, selected, onSelect, levels, limbParts }: Props) {
+export function OrganModules({ metrics, selected, onSelect, levels, limbParts, hideLabels = false, onHoverChange }: Props) {
   const heartRef = useRef<THREE.Group>(null)
   const lungsRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState<OrganId | null>(null)
+  useEffect(() => {
+    onHoverChange?.(hovered)
+  }, [hovered]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 顏色由判斷邏輯決定（移植自 iss_demo.html，門檻與出處見 Demo判斷依據.md）
   const abnormal = (id: OrganId) => levels[id] !== 'ok'
@@ -425,7 +434,7 @@ export function OrganModules({ metrics, selected, onSelect, levels, limbParts }:
 
   /** 標籤只在選取、滑鼠移上、或異常時顯示 */
   const showLabel = (id: OrganId, abnormal = false) =>
-    labelsReady && (selected === id || hovered === id || abnormal)
+    !hideLabels && labelsReady && (selected === id || hovered === id || abnormal)
 
   useFrame((state) => {
     const t = state.clock.elapsedTime

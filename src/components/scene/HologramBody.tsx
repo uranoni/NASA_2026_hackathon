@@ -8,6 +8,8 @@ type Props = {
   scanEnabled: boolean
   alertMix: number
   modelUrl?: string
+  /** false＝只畫人體，不畫掃描環與兩側能量柱（監測頁用）；預設 true，舊 HUD 不受影響 */
+  decor?: boolean
 }
 
 /** CC0 真人肌肉模型（Grab3D Human Muscles light），約 1.80 m */
@@ -195,6 +197,7 @@ export function HologramBody({
   scanEnabled,
   alertMix,
   modelUrl = DEFAULT_GLB_URL,
+  decor = true,
 }: Props) {
   const hologramMat = useHologramMaterial(scanEnabled, alertMix)
   const wireMat = useWireMaterial(alertMix)
@@ -210,8 +213,8 @@ export function HologramBody({
       <Suspense fallback={<FallbackBody material={hologramMat} />}>
         <RealisticBody url={modelUrl} hologramMat={hologramMat} wireMat={wireMat} />
       </Suspense>
-      <ScanRings enabled={scanEnabled} />
-      <ContainmentBeams />
+      {decor && <ScanRings enabled={scanEnabled} />}
+      {decor && <ContainmentBeams />}
     </group>
   )
 }

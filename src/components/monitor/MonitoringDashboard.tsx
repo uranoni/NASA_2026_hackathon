@@ -30,7 +30,7 @@ import {
 } from '../../lib/feed'
 import { dayKey } from '../../lib/records'
 import type { OrganId } from '../../types/telemetry'
-import { TelemetryScene } from '../scene/TelemetryScene'
+import { BodyIndexScene } from './BodyIndexScene'
 
 /**
  * 太空人健康監測（資料進來之後）
@@ -149,6 +149,7 @@ const REGION_KEYS: Record<OrganId, FeedKey[]> = {
   limbs: ['exercise'],
 }
 const REGION_LABEL: Record<OrganId, string> = { brain: 'Head / brain', eyes: 'Eyes', neck: 'Neck', heart: 'Heart', lungs: 'Lungs', limbs: 'Limbs' }
+const REGION_ORDER: OrganId[] = ['brain', 'eyes', 'neck', 'heart', 'lungs', 'limbs']
 
 const IMPORT_KEY = 'astroHealth.feedImport.v1'
 const SENT_KEY = 'astroHealth.downlinkAt.v1'
@@ -261,7 +262,7 @@ export default function MonitoringDashboard() {
 
   // ---------- 3D 部位篩選 ----------
   const [selected, setSelected] = useState<OrganId | null>(null)
-  const [resetToken, setResetToken] = useState(0)
+  const [hovered, setHovered] = useState<OrganId | null>(null)
 
   // ---------- 畫面資料 ----------
   const vitLv = (k?: VitalKey): Lv => {
@@ -329,6 +330,32 @@ export default function MonitoringDashboard() {
   }
   const rowLv = (r: Row): Lv => (r.key === 'exercise' ? (week.warn ? 'warn' : 'ok') : vitLv(r.vit))
   const shown = selected ? REGION_KEYS[selected] : null
+
+  /** 3D 外面的部位清單：原本畫在 3D 裡的文字（狀態與數值）改在這裡顯示 */
+  const regionInfo = (id: OrganId): { lv: Lv; text: string } => {
+    const f = a.body[id].find((x) => x.level !== 'ok')
+    if (f) return { lv: a.level[id], text: f.text }
+    const v = (k: FeedKey) => L(k)
+    switch (id) {
+      case 'brain': {
+        const s = v('sleep')
+        return { lv: 'ok', text: s ? `Sleep ${s.v.toFixed(1)} h` : 'No findings' }
+      }
+      case 'heart': {
+        const hr = v('hr'),
+          sbp = v('sbp')
+        return { lv: hr || sbp ? 'ok' : 'none', text: hr || sbp ? `HR ${hr ? Math.round(hr.v) : '—'} bpm · BP ${sbp?.v ?? '—'}/${v('dbp')?.v ?? '—'}` : 'No data' }
+      }
+      case 'lungs': {
+        const s = v('spo2')
+        return { lv: s ? 'ok' : 'none', text: s ? `SpO₂ ${Math.round(s.v)} %` : 'No data' }
+      }
+      case 'limbs':
+        return { lv: 'ok', text: `Exercise ${week.sessions} of last 7 days` }
+      default:
+        return { lv: 'none', text: 'No measurement in this system' }
+    }
+  }
 
   const groupStatus = (g: (typeof FEED_GROUPS)[number]) => {
     const last = g.keys.map((k) => latest(obs, k)).filter(Boolean).sort((x, y) => y!.t - x!.t)[0] ?? null
@@ -433,36 +460,44 @@ export default function MonitoringDashboard() {
             title="Body (select to filter)"
             right={
               selected && (
-                <button
-                  type="button"
-                  className="text-xs text-slate-400 underline"
-                  onClick={() => {
-                    setSelected(null)
-                    setResetToken((n) => n + 1)
-                  }}
-                >
+                <button type="button" className="text-xs text-slate-400 underline" onClick={() => setSelected(null)}>
                   Show all
                 </button>
               )
             }
           >
-            <div className="h-[320px] overflow-hidden rounded-lg">
-              <TelemetryScene
-                heartRate={input.hr ?? 70}
-                spo2={input.spo2 ?? 98}
-                respRate={14}
-                muscleFatigue={20}
+            <div className="h-[300px] overflow-hidden rounded-lg bg-slate-950/60">
+              <BodyIndexScene
                 selected={selected}
                 onSelect={setSelected}
-                scanEnabled={false}
-                emergency={false}
-                resetToken={resetToken}
+                onHover={setHovered}
                 levels={a.level}
                 limbParts={a.limbParts}
-                alert={a.overall === 'bad'}
+                heartRate={input.hr ?? 70}
               />
             </div>
-            <p className="mt-2 text-xs text-slate-400">{selected ? `Showing items for: ${REGION_LABEL[selected]}` : 'Highlighted parts have findings.'}</p>
+            <p className="mt-1 text-center text-[11px] text-slate-500">Drag to turn · click a part to filter</p>
+            <ul className="mt-2 space-y-0.5">
+              {REGION_ORDER.map((id) => {
+                const info = regionInfo(id)
+                const active = selected === id
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(active ? null : id)}
+                      className={`flex w-full items-start gap-1.5 rounded px-1.5 py-1 text-left text-[12px] ${
+                        active ? 'bg-sky-900/50' : hovered === id ? 'bg-slate-800' : 'hover:bg-slate-800/70'
+                      }`}
+                    >
+                      <StatusIcon lv={info.lv} className="mt-px" />
+                      <span className="w-[70px] shrink-0 font-semibold text-slate-200">{REGION_LABEL[id]}</span>
+                      <span className="text-slate-400">{info.text}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
           </Panel>
 
           {/* 警示與行動 */}
