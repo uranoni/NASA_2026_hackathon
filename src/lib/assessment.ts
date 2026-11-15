@@ -20,7 +20,8 @@ export type MissionEnv = 'iss' | 'transit' | 'moon' | 'mars' | 'ground'
 export type Context = { day: number; env: MissionEnv; act: Activity }
 
 export type Finding = { level: Level; text: string; src: string }
-export type Advice = { lv: Level; to: 'self' | 'ground'; text: string }
+/** action：建議旁邊的快捷按鈕（目前只有「帶入運動課表 A／B」） */
+export type Advice = { lv: Level; to: 'self' | 'ground'; text: string; action?: { kind: 'exercise'; plan: 'A' | 'B'; label: string } }
 /** 每個量測項目的狀態（主畫面卡片用）；dir＝超出上限 hi／下限 lo，數值後顯示 ↑↓（F.4.3.1） */
 export type VitalKey = 'hr' | 'bp' | 'glu' | 'temp' | 'sleep' | 'mood' | 'spo2' | 'k' | 'hydra' | 'sym' | 'clot' | 'eva'
 export type Vital = { lv: Level | 'info'; text: string; dir: 'hi' | 'lo' | null }
@@ -87,6 +88,10 @@ export type ManualInput = {
   exercise_done?: boolean
   /** 最近 7 天有運動的天數（顯示用） */
   exercise_week?: number
+  /** 建議的課表（比較久沒做的那份）與最近 7 天有沒有做過 A（下肢）、B（上肢） */
+  exercise_suggest?: 'A' | 'B'
+  exercise_doneA?: boolean
+  exercise_doneB?: boolean
 }
 
 export type Assessment = {
@@ -185,7 +190,7 @@ const ACT_NAME: Record<Activity, string> = {
 }
 
 type Add = (reg: Region, lv: Level, text: string, src: string) => void
-type AddAdvice = (lv: Level, to: Advice['to'], text: string, first?: boolean) => void
+type AddAdvice = (lv: Level, to: Advice['to'], text: string, first?: boolean, action?: Advice['action']) => void
 
 // ===================== 評估：環境（只給左下角面板，不影響人體燈號） =====================
 export function evalEnv(r: EnvReadings, activity: Activity) {
@@ -583,13 +588,23 @@ function evalManual(
   if (m.exercise_done === false) {
     const src = 'Demo-defined; 6 days/week per NASA/SP-20250000273, effects per OCHMO-TB-031'
     const wk = m.exercise_week != null ? ` (${m.exercise_week}/6 sessions in the last 7 days)` : ''
-    add('limbs', 'warn', `No training today and this week's rest day is used${wk}: bone and muscle loading missed`, src)
+    // 缺哪一塊：最近 7 天沒做過 A＝下肢、沒做過 B＝上肢（gemini 檔的「偵測到缺乏上肢或下肢訓練」）
+    const gaps = [m.exercise_doneA === false && 'lower-body (Plan A)', m.exercise_doneB === false && 'upper-body (Plan B)'].filter(Boolean)
+    const gapTxt = gaps.length ? `; no ${gaps.join(' or ')} training in the last 7 days` : ''
+    add('limbs', 'warn', `No training today and this week's rest day is used${wk}${gapTxt}: bone and muscle loading missed`, src)
     add('heart', 'warn', `No training today and this week's rest day is used${wk}: cardiovascular deconditioning risk`, src)
     add('whole', 'warn', `Below the 6-days-a-week exercise plan${wk}`, src)
+    const plan = m.exercise_suggest ?? 'A'
     A(
       'warn',
       'self',
-      `No resistive or aerobic training reported today, and this week's rest day is already used${wk}. Per NASA OCHMO-TB-031, missing training speeds up loss of aerobic capacity, muscle strength and bone strength, and weakens sensorimotor function. Do today’s training plan soon to stay fit for duty`,
+      `No resistive or aerobic training reported today, and this week's rest day is already used${wk}. Without training, bone density can drop as much as 0.5–1.5% per month [NASA/SP-20250000273], and aerobic capacity, muscle strength and sensorimotor function decline [OCHMO-TB-031]. Do today’s training plan soon to stay fit for duty`,
+      false,
+      {
+        kind: 'exercise',
+        plan,
+        label: plan === 'A' ? '💡 Suggested: Plan A (lower-body bone protection + aerobic)' : '💡 Suggested: Plan B (upper-body strength + cardio)',
+      },
     )
   }
   // EVA
@@ -623,8 +638,8 @@ export function evaluate(c: Context, m: ManualInput): Assessment {
   const advice: Advice[] = [],
     vit: Partial<Record<VitalKey, Vital>> = {}
   const add: Add = (reg, lv, text, src) => body[reg].push({ level: lv, text, src })
-  const A: AddAdvice = (lv, to, text, first) => {
-    const x = { lv, to, text }
+  const A: AddAdvice = (lv, to, text, first, action) => {
+    const x: Advice = action ? { lv, to, text, action } : { lv, to, text }
     if (first) advice.unshift(x)
     else advice.push(x)
   }

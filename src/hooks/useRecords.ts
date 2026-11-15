@@ -4,6 +4,7 @@ import {
   clearSnapshots,
   loadRecords,
   reportExercise,
+  resetTodayExercise,
   saveRecords,
   type Records,
   type Settings,
@@ -38,6 +39,14 @@ export function useRecords() {
     })
   }, [])
 
+  const resetToday = useCallback(() => {
+    setRecords((r) => {
+      const { records, removed } = resetTodayExercise(r)
+      console.log('[records]', `Demo：撤銷今天的運動回報，移除佇列 ${removed} 筆`)
+      return records
+    })
+  }, [])
+
   const clear = useCallback(() => {
     setRecords((r) => {
       console.log('[records]', `清除 ${r.snapshots.length} 筆快照`)
@@ -45,5 +54,5 @@ export function useRecords() {
     })
   }, [])
 
-  return { records, saveOk, add, updateSettings, report, clear, setRecords }
+  return { records, saveOk, add, updateSettings, report, resetToday, clear, setRecords }
 }

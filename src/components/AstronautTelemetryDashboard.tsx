@@ -3,8 +3,8 @@ import { useCabinTelemetry } from '../hooks/useCabinTelemetry'
 import { useRecords } from '../hooks/useRecords'
 import { useTelemetry } from '../hooks/useTelemetry'
 import { evalEnv, evaluate, REGION_NAME, type Context, type Region } from '../lib/assessment'
-import { exerciseObservation, weekStatus } from '../lib/exercise'
-import { lastExerciseAt, makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
+import { exerciseObservation, weekStatus, type PlanId } from '../lib/exercise'
+import { dayKey, lastExerciseAt, makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
 import { DailyTasksPanel } from './hud/DailyTasksPanel'
 import { ExerciseDialog } from './hud/ExerciseDialog'
 import type { OrganId, TelemetrySource } from '../types/telemetry'
@@ -34,7 +34,8 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   /** 紀錄（localStorage）：任務設定、生命徵象與艙內快照；見 src/lib/records.ts */
   const rec = useRecords()
   const [recordsOpen, setRecordsOpen] = useState(false)
-  const [exerciseOpen, setExerciseOpen] = useState(false)
+  /** 訓練清單：null＝關閉；plan＝開哪份；prefill＝從建議按鈕進來，先勾好整份 */
+  const [exerciseOpen, setExerciseOpen] = useState<null | { plan: PlanId; prefill: boolean }>(null)
   // 運動回報：每週 6 天規則（每分鐘重算一次，跨過午夜會自動換日）
   const [nowTick, setNowTick] = useState(() => Date.now())
   useEffect(() => {
@@ -67,8 +68,11 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
         sleep: data.sleepHours,
         exercise_done: exerciseDone,
         exercise_week: week.sessions,
+        exercise_suggest: week.nextPlan,
+        exercise_doneA: week.doneA,
+        exercise_doneB: week.doneB,
       }),
-    [ctx, data, exerciseDone, week.sessions],
+    [ctx, data, exerciseDone, week.sessions, week.nextPlan, week.doneA, week.doneB],
   )
   // 艙內環境：只給左下角面板顯示，不影響人體燈號（新版原則）
   const cabinEval = useMemo(
@@ -171,7 +175,11 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           </p>
         </div>
         <div className="pointer-events-auto">
-          <DailyTasksPanel week={week} onOpenExercise={() => setExerciseOpen(true)} />
+          <DailyTasksPanel
+            week={week}
+            onOpenExercise={() => setExerciseOpen({ plan: week.nextPlan, prefill: !week.todayDone })}
+            onResetToday={rec.resetToday}
+          />
         </div>
       </header>
 
@@ -182,6 +190,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           selected={selected}
           assessment={assessment}
           ctx={ctx}
+          onSuggestPlan={(plan) => setExerciseOpen({ plan, prefill: true })}
         />
       </div>
 
@@ -229,15 +238,19 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
 
       {exerciseOpen && (
         <ExerciseDialog
+          key={`${exerciseOpen.plan}-${exerciseOpen.prefill}`}
           week={week}
+          initialPlan={exerciseOpen.plan}
+          prefill={exerciseOpen.prefill}
+          reportedItems={rec.records.checkins[dayKey(new Date(nowTick))]?.exercise_items ?? null}
           lastAt={lastExercise}
           onReport={(plan, items) => {
             const now = new Date()
             rec.report(plan, items, exerciseObservation(now, ctx, plan, items))
             setNowTick(now.getTime())
-            setExerciseOpen(false)
+            setExerciseOpen(null)
           }}
-          onClose={() => setExerciseOpen(false)}
+          onClose={() => setExerciseOpen(null)}
         />
       )}
 

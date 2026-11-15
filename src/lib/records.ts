@@ -210,6 +210,25 @@ export function reportExercise(r: Records, when: Date, plan: PlanId, items: stri
   }
 }
 
+/**
+ * Demo 用：撤銷今天的運動回報（使用者要求，方便重看「未完成」的畫面）。
+ * 清掉今天打卡的運動欄位，並移除今天放進傳回地面佇列的運動 Observation；其他日子、快照、設定都不動。
+ */
+export function resetTodayExercise(r: Records, now = new Date()): { records: Records; removed: number } {
+  const key = dayKey(now)
+  const entry = r.checkins[key]
+  const checkins = { ...r.checkins }
+  if (entry) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { exercise_done, exercise_at, exercise_items, exercise_plan, ...rest } = entry
+    if (Object.keys(rest).length) checkins[key] = rest
+    else delete checkins[key]
+  }
+  const isToday = (iso: string) => dayKey(new Date(iso)) === key
+  const outbox = r.outbox.filter((o) => !(o.code.coding[0]?.code === 'exercise-session-completed' && isToday(o.effectiveDateTime)))
+  return { records: { ...r, checkins, outbox }, removed: r.outbox.length - outbox.length }
+}
+
 /** 清除快照（設定與打卡保留）。畫面上要先確認才呼叫 [V2 10080] */
 export function clearSnapshots(r: Records): Records {
   return { ...r, snapshots: [] }

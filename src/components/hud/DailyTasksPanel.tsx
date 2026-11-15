@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { PLANS, WEEKLY_TARGET, type WeekStatus } from '../../lib/exercise'
 
 /**
@@ -8,15 +9,18 @@ import { PLANS, WEEKLY_TARGET, type WeekStatus } from '../../lib/exercise'
 type Props = {
   week: WeekStatus
   onOpenExercise: () => void
+  /** Demo：撤銷今天的回報（要再按一次確認，[V2 10080]） */
+  onResetToday: () => void
 }
 
-export function DailyTasksPanel({ week, onOpenExercise }: Props) {
+export function DailyTasksPanel({ week, onOpenExercise, onResetToday }: Props) {
+  const [confirmReset, setConfirmReset] = useState(false)
   // 三種狀態：今天已回報（完成）、今天可休息（未完成但不警告）、休息日已用掉（黃色警告）
   const tasks = [
     {
       id: 'exercise',
       icon: '🏋️',
-      title: `Training · ${PLANS[week.nextPlan].title}`,
+      title: week.todayDone ? `Training · ${PLANS[week.nextPlan].title}` : `💡 Suggested: ${PLANS[week.nextPlan].title}`,
       done: week.todayDone,
       warn: week.warn,
       status: `This week ${week.sessions}/${WEEKLY_TARGET}${
@@ -62,6 +66,42 @@ export function DailyTasksPanel({ week, onOpenExercise }: Props) {
           </li>
         ))}
       </ul>
+
+      {/* Demo 用：撤銷今天的回報，重看「未完成」的狀態 */}
+      {week.todayDone && (
+        <div className="mt-2 flex items-center justify-end gap-2 text-[10px]">
+          {confirmReset ? (
+            <>
+              <span className="text-cyan-100/70">Undo today’s report?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onResetToday()
+                  setConfirmReset(false)
+                }}
+                className="rounded-sm border border-[#ff2a55]/50 px-2 py-0.5 tracking-wider text-[#ff6b8a] hover:bg-[#ff2a55]/15"
+              >
+                YES, RESET
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="rounded-sm border border-cyan-400/30 px-2 py-0.5 tracking-wider text-cyan-100/75 hover:bg-cyan-400/10"
+              >
+                CANCEL
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmReset(true)}
+              className="rounded-sm border border-cyan-400/25 px-2 py-0.5 tracking-wider text-cyan-200/60 hover:bg-cyan-400/10"
+            >
+              ↺ RESET TODAY (DEMO)
+            </button>
+          )}
+        </div>
+      )}
     </section>
   )
 }

@@ -3,6 +3,11 @@ import { EXERCISE_WHY, PLANS, WEEKLY_TARGET, type PlanId, type WeekStatus } from
 
 type Props = {
   week: WeekStatus
+  /** 開啟時顯示哪份課表；prefill＝從「建議」按鈕進來，先把整份課表勾好，按一下就能完成（gemini 檔的一鍵帶入） */
+  initialPlan: PlanId
+  prefill: boolean
+  /** 今天已回報時，回報過的項目（打開時照實勾好、唯讀；要重做請用左上的 RESET TODAY） */
+  reportedItems: string[] | null
   lastAt: string | null
   onReport: (plan: PlanId, itemIds: string[]) => void
   onClose: () => void
@@ -12,10 +17,13 @@ type Props = {
  * 本日訓練（SOP 檢查表樣式）：A／B 日輪替（示範課表），清單只是提示，不必全部做完；勾選做了的項目後回報。
  * 回報後寫入今日打卡 exercise_done = true，並放進傳回地面的 FHIR 佇列（由呼叫端處理）。
  */
-export function ExerciseDialog({ week, lastAt, onReport, onClose }: Props) {
-  // 預設顯示輪到的課表；可以手動切換
-  const [plan, setPlan] = useState<PlanId>(week.nextPlan)
-  const [checked, setChecked] = useState<string[]>([])
+export function ExerciseDialog({ week, initialPlan, prefill, reportedItems, lastAt, onReport, onClose }: Props) {
+  const readOnly = week.todayDone && reportedItems != null
+  // 預設顯示建議的課表；可以手動切換
+  const [plan, setPlan] = useState<PlanId>(initialPlan)
+  const [checked, setChecked] = useState<string[]>(() =>
+    readOnly ? reportedItems! : prefill ? PLANS[initialPlan].items.map((it) => it.id) : [],
+  )
   const items = PLANS[plan].items
 
   useEffect(() => {
@@ -24,8 +32,12 @@ export function ExerciseDialog({ week, lastAt, onReport, onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const toggle = (id: string) => setChecked((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))
+  const toggle = (id: string) => {
+    if (readOnly) return
+    setChecked((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]))
+  }
   const switchPlan = (p: PlanId) => {
+    if (readOnly) return
     setPlan(p)
     setChecked([])
   }
@@ -72,12 +84,13 @@ export function ExerciseDialog({ week, lastAt, onReport, onClose }: Props) {
               role="tab"
               aria-selected={plan === p}
               onClick={() => switchPlan(p)}
+              disabled={readOnly && plan !== p}
               className={`rounded-sm border px-2 py-1.5 text-[10px] tracking-wider transition ${
                 plan === p ? 'border-cyan-300 bg-cyan-400/15 text-cyan-50' : 'border-cyan-400/25 text-cyan-100/70 hover:bg-cyan-400/10'
               }`}
             >
               {PLANS[p].title.toUpperCase()}
-              {week.nextPlan === p && !week.todayDone && <span className="ml-1 text-cyan-300/80">· TODAY</span>}
+              {week.nextPlan === p && !week.todayDone && <span className="ml-1 text-cyan-300/80">· SUGGESTED</span>}
             </button>
           ))}
         </div>
@@ -93,7 +106,13 @@ export function ExerciseDialog({ week, lastAt, onReport, onClose }: Props) {
                       on ? 'border-cyan-300/70 bg-cyan-400/10' : 'border-cyan-400/20 hover:bg-cyan-400/5'
                     }`}
                   >
-                    <input type="checkbox" checked={on} onChange={() => toggle(it.id)} className="mt-1 accent-cyan-400" />
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggle(it.id)}
+                      disabled={readOnly}
+                      className="mt-1 accent-cyan-400"
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm text-cyan-50">
                         <span className="mr-1 text-[10px] text-cyan-300/60" style={{ fontFamily: 'var(--font-mono)' }}>
@@ -128,16 +147,17 @@ export function ExerciseDialog({ week, lastAt, onReport, onClose }: Props) {
 
         <div className="mt-3 flex items-center justify-between gap-3">
           <p className="text-[10px] text-cyan-200/50">
-            {doneIds.length}/{items.length} checked{doneIds.length === 0 && ' · check what you did'}
+            {doneIds.length}/{items.length} checked
+            {readOnly ? ' · reported today (use RESET TODAY to redo)' : doneIds.length === 0 && ' · check what you did'}
           </p>
           <button
             type="button"
-            disabled={doneIds.length === 0}
+            disabled={readOnly || doneIds.length === 0}
             onClick={() => onReport(plan, doneIds)}
             className="rounded-sm border border-cyan-300 bg-cyan-400/15 px-3 py-1.5 text-[11px] tracking-[0.15em] text-cyan-50 transition hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:border-cyan-400/25 disabled:bg-transparent disabled:text-cyan-100/40"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            ✅ REPORT SESSION
+            {readOnly ? '✓ REPORTED TODAY' : '✅ COMPLETE TODAY’S TRAINING'}
           </button>
         </div>
       </div>
