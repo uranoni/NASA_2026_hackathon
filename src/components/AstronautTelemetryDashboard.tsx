@@ -4,6 +4,7 @@ import { useRecords } from '../hooks/useRecords'
 import { useTelemetry } from '../hooks/useTelemetry'
 import { evalEnv, evaluate, REGION_NAME, type Context, type Region } from '../lib/assessment'
 import { exerciseObservation, weekStatus, type PlanId } from '../lib/exercise'
+import { sleepObservation } from '../lib/sleep'
 import { dayKey, lastExerciseAt, makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
 import { DailyTasksPanel } from './hud/DailyTasksPanel'
 import { ExerciseDialog } from './hud/ExerciseDialog'
@@ -45,6 +46,8 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   const lastExercise = lastExerciseAt(rec.records)
   const week = useMemo(() => weekStatus(rec.records.checkins, new Date(nowTick)), [rec.records.checkins, nowTick])
   const exerciseDone = !week.warn
+  /** 今天的睡眠自評 */
+  const sleepMood = rec.records.checkins[dayKey(new Date(nowTick))]?.sleep ?? null
   /** 任務第幾天、所在環境（新版設定頁）：會改變體溫、血壓的判斷範圍 */
   const settings = rec.records.settings
   /** 左下角艙內資料選單：none＝艙內數值收起；iss＝ISS 艙內遙測 */
@@ -68,11 +71,12 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
         sleep: data.sleepHours,
         exercise_done: exerciseDone,
         exercise_week: week.sessions,
+        sleep_quality: sleepMood ?? undefined,
         exercise_suggest: week.nextPlan,
         exercise_doneA: week.doneA,
         exercise_doneB: week.doneB,
       }),
-    [ctx, data, exerciseDone, week.sessions, week.nextPlan, week.doneA, week.doneB],
+    [ctx, data, exerciseDone, week.sessions, week.nextPlan, week.doneA, week.doneB, sleepMood],
   )
   // 艙內環境：只給左下角面板顯示，不影響人體燈號（新版原則）
   const cabinEval = useMemo(
@@ -178,6 +182,12 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           <DailyTasksPanel
             week={week}
             onOpenExercise={() => setExerciseOpen({ plan: week.nextPlan, prefill: !week.todayDone })}
+            sleepMood={sleepMood}
+            onSleep={(mood) => {
+              const now = new Date()
+              rec.sleep(mood, sleepObservation(now, ctx, mood))
+              setNowTick(now.getTime())
+            }}
             onResetToday={rec.resetToday}
           />
         </div>

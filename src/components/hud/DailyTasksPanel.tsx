@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import { PLANS, WEEKLY_TARGET, type WeekStatus } from '../../lib/exercise'
+import { SLEEP_OPTIONS, type SleepMood } from '../../lib/sleep'
 
 /**
  * 每日任務（左上，EVA 標題區塊下方）：列出今天要完成的任務與狀態。
- * 目前只有運動回報；之後的每日任務（例如睡眠自評）加在 tasks 陣列即可。
+ * 目前有運動回報（開清單）和睡眠自評（直接點表情）。
  * 狀態除了顏色也有符號與文字（[V2 10045]）。
  */
 type Props = {
   week: WeekStatus
   onOpenExercise: () => void
+  /** 今天的睡眠自評；null＝還沒填 */
+  sleepMood: SleepMood | null
+  onSleep: (m: SleepMood) => void
   /** Demo：撤銷今天的回報（要再按一次確認，[V2 10080]） */
   onResetToday: () => void
 }
 
-export function DailyTasksPanel({ week, onOpenExercise, onResetToday }: Props) {
+export function DailyTasksPanel({ week, onOpenExercise, sleepMood, onSleep, onResetToday }: Props) {
   const [confirmReset, setConfirmReset] = useState(false)
   // 三種狀態：今天已回報（完成）、今天可休息（未完成但不警告）、休息日已用掉（黃色警告）
   const tasks = [
@@ -29,7 +33,9 @@ export function DailyTasksPanel({ week, onOpenExercise, onResetToday }: Props) {
       onOpen: onOpenExercise,
     },
   ]
-  const doneCount = tasks.filter((t) => t.done).length
+  const doneCount = tasks.filter((t) => t.done).length + (sleepMood ? 1 : 0)
+  const total = tasks.length + 1
+  const anyDoneToday = week.todayDone || sleepMood != null
 
   return (
     <section className="hud-glass hud-corner relative w-[min(280px,92vw)] p-3">
@@ -38,7 +44,7 @@ export function DailyTasksPanel({ week, onOpenExercise, onResetToday }: Props) {
           DAILY TASKS
         </p>
         <span className="text-[10px] tracking-wider text-cyan-200/55">
-          {doneCount}/{tasks.length} done
+          {doneCount}/{total} done
         </span>
       </div>
       <ul className="mt-2 space-y-1.5">
@@ -65,14 +71,42 @@ export function DailyTasksPanel({ week, onOpenExercise, onResetToday }: Props) {
             </button>
           </li>
         ))}
+        {/* 睡眠自評：直接點表情，不開對話框；睡不好只會出現提醒，不亮燈（沒有公開門檻） */}
+        <li className="rounded-sm border border-cyan-400/35 px-3 py-2 text-xs tracking-wide text-cyan-100/85">
+          <span className="flex items-center justify-between gap-2">
+            <span>😴 How did you sleep?</span>
+            <span className="text-[10px] opacity-80">{sleepMood ? '✓ DONE' : ''}</span>
+          </span>
+          <span className="mt-1.5 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Sleep quality">
+            {SLEEP_OPTIONS.map((o) => {
+              const on = sleepMood === o.v
+              return (
+                <button
+                  key={o.v}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  aria-label={`Slept ${o.label}`}
+                  onClick={() => onSleep(o.v)}
+                  className={`rounded-sm border px-1 py-1 transition ${
+                    on ? 'border-cyan-300 bg-cyan-400/20 text-cyan-50' : 'border-cyan-400/25 text-cyan-100/75 hover:bg-cyan-400/10'
+                  }`}
+                >
+                  <span className="block text-lg leading-none">{o.emoji}</span>
+                  <span className="mt-0.5 block text-[9px] tracking-wider">{o.label.toUpperCase()}</span>
+                </button>
+              )
+            })}
+          </span>
+        </li>
       </ul>
 
       {/* Demo 用：撤銷今天的回報，重看「未完成」的狀態 */}
-      {week.todayDone && (
+      {anyDoneToday && (
         <div className="mt-2 flex items-center justify-end gap-2 text-[10px]">
           {confirmReset ? (
             <>
-              <span className="text-cyan-100/70">Undo today’s report?</span>
+              <span className="text-cyan-100/70">Undo today’s tasks?</span>
               <button
                 type="button"
                 onClick={() => {

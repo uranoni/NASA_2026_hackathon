@@ -4,6 +4,7 @@ import {
   clearSnapshots,
   loadRecords,
   reportExercise,
+  reportSleep,
   resetTodayExercise,
   saveRecords,
   type Records,
@@ -11,6 +12,7 @@ import {
   type Snapshot,
 } from '../lib/records'
 import type { FhirObservation, PlanId } from '../lib/exercise'
+import type { SleepMood, SleepObservation } from '../lib/sleep'
 
 /** 紀錄狀態：載入一次、每次變更就寫回 localStorage（src/lib/records.ts） */
 export function useRecords() {
@@ -39,10 +41,17 @@ export function useRecords() {
     })
   }, [])
 
+  const sleep = useCallback((mood: SleepMood, obs: SleepObservation) => {
+    setRecords((r) => {
+      console.log('[records]', `睡眠自評：${mood}`)
+      return reportSleep(r, new Date(obs.effectiveDateTime), mood, obs)
+    })
+  }, [])
+
   const resetToday = useCallback(() => {
     setRecords((r) => {
       const { records, removed } = resetTodayExercise(r)
-      console.log('[records]', `Demo：撤銷今天的運動回報，移除佇列 ${removed} 筆`)
+      console.log('[records]', `Demo：撤銷今天的每日任務（運動、睡眠），移除佇列 ${removed} 筆`)
       return records
     })
   }, [])
@@ -54,5 +63,5 @@ export function useRecords() {
     })
   }, [])
 
-  return { records, saveOk, add, updateSettings, report, resetToday, clear, setRecords }
+  return { records, saveOk, add, updateSettings, report, sleep, resetToday, clear, setRecords }
 }

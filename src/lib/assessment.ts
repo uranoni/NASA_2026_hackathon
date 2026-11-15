@@ -88,6 +88,8 @@ export type ManualInput = {
   exercise_done?: boolean
   /** 最近 7 天有運動的天數（顯示用） */
   exercise_week?: number
+  /** 睡眠自評（三表情）：只提醒、不亮燈（沒有公開門檻），見 src/lib/sleep.ts */
+  sleep_quality?: 'sad' | 'neutral' | 'happy'
   /** 建議的課表（比較久沒做的那份）與最近 7 天有沒有做過 A（下肢）、B（上肢） */
   exercise_suggest?: 'A' | 'B'
   exercise_doneA?: boolean
@@ -459,6 +461,11 @@ function evalManual(
       }
       A(lv, 'ground', 'Short sleep: discuss the work/rest schedule with ground')
     }
+  }
+  // 睡眠自評：睡不好只給提醒（等級 ok，不亮燈）；文字沿用新版 a_sleep_self／a_sleep_ground 與 PMC
+  if (m.sleep_quality === 'sad') {
+    A('ok', 'self', 'Slept poorly (self-rated): have a crewmate double-check steps before critical tasks today')
+    A('ok', 'ground', 'Slept poorly: mention it at the weekly private medical conference (PMC), or discuss the work/rest schedule with ground')
   }
   // 心情、疲勞：沒有公開門檻，只記錄（不加入人體圖、不產生建議）
   if (m.mood != null || m.fatigue != null) setV('mood', 'info', 'Recorded (no public threshold, not judged)')

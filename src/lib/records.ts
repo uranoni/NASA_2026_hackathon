@@ -11,6 +11,7 @@
 import type { Activity, Assessment, EnvCard, Level, MissionEnv, VitalKey } from './assessment'
 import { clampDay } from './assessment'
 import type { FhirObservation, PlanId } from './exercise'
+import type { SleepMood, SleepObservation } from './sleep'
 
 const KEY = 'astroHealth.records.v1'
 /** 舊的設定位置（第 2 步用過，也和新版 iss_demo(1).html 共用）；第一次載入時搬過來 */
@@ -50,6 +51,9 @@ export type CheckinEntry = Record<string, unknown> & {
   exercise_items?: string[]
   /** 當天做的課表（A／B 輪替） */
   exercise_plan?: PlanId
+  /** 睡眠自評（三表情）與填寫時間 */
+  sleep?: SleepMood
+  sleep_at?: string
 }
 
 export type Records = {
@@ -58,7 +62,7 @@ export type Records = {
   snapshots: Snapshot[]
   checkins: Record<string, CheckinEntry>
   /** 傳回地面的佇列（FHIR Observation）；目前只有運動回報會放進來，demo 不會真的傳送 */
-  outbox: FhirObservation[]
+  outbox: (FhirObservation | SleepObservation)[]
 }
 
 const DEFAULT_SETTINGS: Settings = { day: 45, env: 'iss', cabin: 'iss' }
@@ -210,9 +214,23 @@ export function reportExercise(r: Records, when: Date, plan: PlanId, items: stri
   }
 }
 
+const isTodayObs = (o: { effectiveDateTime: string }, key: string) => dayKey(new Date(o.effectiveDateTime)) === key
+const codeOf = (o: { code: { coding: { code: string }[] } }) => o.code.coding[0]?.code
+
+/** 填今天的睡眠自評：寫入今日打卡，並放進傳回地面佇列（同一天改選會取代前一筆） */
+export function reportSleep(r: Records, when: Date, mood: SleepMood, obs: SleepObservation): Records {
+  const key = dayKey(when)
+  const prev = r.checkins[key] ?? {}
+  return {
+    ...r,
+    checkins: { ...r.checkins, [key]: { ...prev, sleep: mood, sleep_at: when.toISOString() } },
+    outbox: [...r.outbox.filter((o) => !(codeOf(o) === 'sleep-quality-self-rated' && isTodayObs(o, key))), obs],
+  }
+}
+
 /**
- * Demo 用：撤銷今天的運動回報（使用者要求，方便重看「未完成」的畫面）。
- * 清掉今天打卡的運動欄位，並移除今天放進傳回地面佇列的運動 Observation；其他日子、快照、設定都不動。
+ * Demo 用：撤銷今天的每日任務（運動回報＋睡眠自評；使用者要求，方便重看「未完成」的畫面）。
+ * 清掉今天打卡的運動與睡眠欄位，並移除今天放進傳回地面佇列的運動、睡眠 Observation；其他日子、快照、設定都不動。
  */
 export function resetTodayExercise(r: Records, now = new Date()): { records: Records; removed: number } {
   const key = dayKey(now)
@@ -220,12 +238,13 @@ export function resetTodayExercise(r: Records, now = new Date()): { records: Rec
   const checkins = { ...r.checkins }
   if (entry) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { exercise_done, exercise_at, exercise_items, exercise_plan, ...rest } = entry
+    const { exercise_done, exercise_at, exercise_items, exercise_plan, sleep, sleep_at, ...rest } = entry
     if (Object.keys(rest).length) checkins[key] = rest
     else delete checkins[key]
   }
-  const isToday = (iso: string) => dayKey(new Date(iso)) === key
-  const outbox = r.outbox.filter((o) => !(o.code.coding[0]?.code === 'exercise-session-completed' && isToday(o.effectiveDateTime)))
+  const outbox = r.outbox.filter(
+    (o) => !(['exercise-session-completed', 'sleep-quality-self-rated'].includes(codeOf(o)) && isTodayObs(o, key)),
+  )
   return { records: { ...r, checkins, outbox }, removed: r.outbox.length - outbox.length }
 }
 
