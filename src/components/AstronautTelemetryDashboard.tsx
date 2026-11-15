@@ -1,39 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCabinTelemetry } from '../hooks/useCabinTelemetry'
+import { useRecords } from '../hooks/useRecords'
 import { useTelemetry } from '../hooks/useTelemetry'
-import { clampDay, evalEnv, evaluate, REGION_NAME, type Context, type MissionEnv, type Region } from '../lib/assessment'
+import { evalEnv, evaluate, REGION_NAME, type Context, type Region } from '../lib/assessment'
+import { makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
 import type { OrganId, TelemetrySource } from '../types/telemetry'
-import { CabinPanel, type Environment } from './hud/CabinPanel'
+import { CabinPanel } from './hud/CabinPanel'
+import { RecordsPanel } from './hud/RecordsPanel'
 import { RightPanel } from './hud/RightPanel'
 import { TelemetryScene } from './scene/TelemetryScene'
-
-type MissionSettings = { day: number; env: MissionEnv }
-/** 和新版同一把 key、同樣的預設（第 45 天、ISS）；localStorage 讀寫失敗時退回預設並記錄原因 */
-const SET_KEY = 'astroHealth.settings.v1'
-const ENVS: MissionEnv[] = ['iss', 'transit', 'moon', 'mars', 'ground']
-function loadSettings(): MissionSettings {
-  const def: MissionSettings = { day: 45, env: 'iss' }
-  try {
-    const raw = JSON.parse(localStorage.getItem(SET_KEY) || 'null')
-    if (!raw) return def
-    return {
-      day: clampDay(Number(raw.day) || def.day),
-      env: ENVS.includes(raw.env) ? raw.env : def.env,
-    }
-  } catch (err) {
-    console.warn('[mission] 讀取設定失敗，改用預設值', err)
-    return def
-  }
-}
-function saveSettings(s: MissionSettings) {
-  try {
-    // 保留新版存的其他欄位（例如人體圖 fig）
-    const prev = JSON.parse(localStorage.getItem(SET_KEY) || '{}')
-    localStorage.setItem(SET_KEY, JSON.stringify({ ...prev, day: s.day, env: s.env }))
-  } catch (err) {
-    console.warn('[mission] 儲存設定失敗（只影響重新整理後是否保留）', err)
-  }
-}
 
 type Props = {
   /** 預留：傳入真實 WebSocket / MQTT 遙測來源 */
@@ -53,18 +28,13 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   const [resetToken, setResetToken] = useState(0)
 
   const cabin = useCabinTelemetry()
+  /** 紀錄（localStorage）：任務設定、生命徵象與艙內快照；見 src/lib/records.ts */
+  const rec = useRecords()
+  const [recordsOpen, setRecordsOpen] = useState(false)
+  /** 任務第幾天、所在環境（新版設定頁）：會改變體溫、血壓的判斷範圍 */
+  const settings = rec.records.settings
   /** 左下角艙內資料選單：none＝艙內數值收起；iss＝ISS 艙內遙測 */
-  const [env, setEnv] = useState<Environment>('iss')
-  /** 任務第幾天、所在環境（新版設定頁）：會改變體溫、血壓的判斷範圍；存在瀏覽器，重新整理後保留 */
-  const [settings, setSettings] = useState(loadSettings)
-  const updateSettings = (patch: Partial<MissionSettings>) => {
-    setSettings((s) => {
-      const next = { ...s, ...patch }
-      console.log('[mission]', `任務第 ${next.day} 天、環境 ${next.env}`)
-      saveSettings(next)
-      return next
-    })
-  }
+  const env = settings.cabin
 
   /**
    * 判斷邏輯移植自新版 iss_demo(1).html（src/lib/assessment.ts）。repo 沒有手動輸入，只把遙測裡有的數值填進去：
@@ -72,7 +42,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
    * 新版沒有輻射判斷；肌肉疲勞、情緒沒有公開門檻（新版只記錄、不亮燈），而且 repo 的單位（0–100）和新版量表不同，所以不填。
    * 作業模式暫用新版預設「一般作業」（之後的步驟再加選單）。
    */
-  const ctx: Context = useMemo(() => ({ day: settings.day, env: settings.env, act: 'work' }), [settings])
+  const ctx: Context = useMemo(() => ({ day: settings.day, env: settings.env, act: 'work' }), [settings.day, settings.env])
   const assessment = useMemo(
     () =>
       evaluate(ctx, {
@@ -90,6 +60,39 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
     () => (env === 'iss' ? evalEnv(cabin.readings(), ctx.act) : { cards: [], advice: [] }),
     [cabin.readings, env, ctx.act],
   )
+
+  // 快照：生命徵象＋判斷結果＋艙內環境（CABIN DATA 選 ISS 時才附上）。用 ref 取最新值，計時器不必重設
+  const takeSnapshot = () =>
+    makeSnapshot(
+      ctx,
+      {
+        hr: data.heartRate,
+        sbp: data.bloodPressureSys,
+        dbp: data.bloodPressureDia,
+        spo2: data.spo2,
+        temp: data.coreTemp,
+        sleep: data.sleepHours,
+      },
+      assessment,
+      env === 'iss' ? cabinEval.cards : null,
+      cabin.status.signal === false,
+      data.emergency,
+    )
+  const snapRef = useRef(takeSnapshot)
+  snapRef.current = takeSnapshot
+  const { add: addSnapshot } = rec
+  // 瀏覽器裡還沒有任何快照時，打開頁面就先存一筆（使用者要求）；之後每 SNAPSHOT_EVERY_MS 一筆。
+  // 載入當下有沒有快照只看一次（firstOpen）；開發模式 StrictMode 會把 effect 跑兩次，ref 在兩次之間保留，所以不會存兩筆
+  const firstOpen = useRef(rec.records.snapshots.length === 0)
+  useEffect(() => {
+    if (firstOpen.current) {
+      firstOpen.current = false
+      addSnapshot(snapRef.current())
+      console.log('[records]', '瀏覽器裡還沒有紀錄，已存第一筆快照（ISS 艙內資料通常還沒收到，這筆多半沒有艙內數值）')
+    }
+    const id = window.setInterval(() => addSnapshot(snapRef.current()), SNAPSHOT_EVERY_MS)
+    return () => window.clearInterval(id)
+  }, [addSnapshot])
 
   const badRegions = (Object.keys(assessment.level) as Region[]).filter((k) => assessment.level[k] === 'bad')
   const alertActive = data.emergency || assessment.overall === 'bad'
@@ -163,13 +166,13 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
       <div className="pointer-events-auto absolute bottom-24 left-4 z-20 md:bottom-6 md:left-6">
         <CabinPanel
           day={settings.day}
-          onDay={(day) => updateSettings({ day })}
+          onDay={(day) => rec.updateSettings({ day })}
           missionEnv={settings.env}
-          onMissionEnv={(e) => updateSettings({ env: e })}
+          onMissionEnv={(e) => rec.updateSettings({ env: e })}
           env={env}
           onEnv={(e) => {
             console.log('[ISS cabin]', '環境選單切換為：' + e)
-            setEnv(e)
+            rec.updateSettings({ cabin: e })
           }}
           cards={cabinEval.cards}
           status={cabin.status}
@@ -179,6 +182,7 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
       {/* 底部控制列 */}
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center p-4 md:p-5">
         <div className="pointer-events-auto hud-glass hud-corner relative flex flex-wrap items-center justify-center gap-2 px-3 py-2.5 md:gap-3 md:px-4">
+          <ControlButton label={`RECORDS (${rec.records.snapshots.length})`} onClick={() => setRecordsOpen(true)} />
           <ControlButton
             label="RESET VIEW"
             onClick={() => {
@@ -199,6 +203,16 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           />
         </div>
       </footer>
+
+      {recordsOpen && (
+        <RecordsPanel
+          records={rec.records}
+          saveOk={rec.saveOk}
+          onSaveNow={() => rec.add(snapRef.current())}
+          onClear={rec.clear}
+          onClose={() => setRecordsOpen(false)}
+        />
+      )}
 
       {/* 緊急狀態全畫面提示 */}
       {alertActive && (
