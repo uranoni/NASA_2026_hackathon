@@ -10,6 +10,7 @@
  */
 import type { Activity, Assessment, EnvCard, Level, MissionEnv, VitalKey } from './assessment'
 import { clampDay } from './assessment'
+import type { FhirObservation, PlanId } from './exercise'
 
 const KEY = 'astroHealth.records.v1'
 /** 舊的設定位置（第 2 步用過，也和新版 iss_demo(1).html 共用）；第一次載入時搬過來 */
@@ -40,13 +41,24 @@ export type Snapshot = {
  * key 用本地日期 yyyy-mm-dd，內容格式由打卡功能自行決定（建議 { exercise: boolean | null, sleep: 'sad' | 'neutral' | 'happy' | null }）。
  * 使用方式：import { getCheckin, saveCheckin } from './records'
  */
-export type CheckinEntry = Record<string, unknown>
+export type CheckinEntry = Record<string, unknown> & {
+  /** 今日是否已完成運動（運動回報模組；預設 false） */
+  exercise_done?: boolean
+  /** 回報時間（ISO） */
+  exercise_at?: string
+  /** 勾選完成的項目 id（見 src/lib/exercise.ts PLANS） */
+  exercise_items?: string[]
+  /** 當天做的課表（A／B 輪替） */
+  exercise_plan?: PlanId
+}
 
 export type Records = {
   version: 1
   settings: Settings
   snapshots: Snapshot[]
   checkins: Record<string, CheckinEntry>
+  /** 傳回地面的佇列（FHIR Observation）；目前只有運動回報會放進來，demo 不會真的傳送 */
+  outbox: FhirObservation[]
 }
 
 const DEFAULT_SETTINGS: Settings = { day: 45, env: 'iss', cabin: 'iss' }
@@ -66,7 +78,7 @@ function cleanSettings(raw: Partial<Settings> | null | undefined): Settings {
 }
 
 function empty(): Records {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, snapshots: [], checkins: {} }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, snapshots: [], checkins: {}, outbox: [] }
 }
 
 export function loadRecords(): Records {
@@ -87,6 +99,7 @@ export function loadRecords(): Records {
       settings: cleanSettings(raw.settings),
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : [],
       checkins: raw.checkins && typeof raw.checkins === 'object' ? raw.checkins : {},
+      outbox: Array.isArray(raw.outbox) ? raw.outbox : [],
     }
   } catch (err) {
     // 下一次儲存就會蓋掉原本的資料，所以先把讀不懂的原始內容另存一份，之後可以手動救回
@@ -169,6 +182,32 @@ export function getCheckin(r: Records, dateKey: string): CheckinEntry | undefine
 
 export function saveCheckin(r: Records, dateKey: string, entry: CheckinEntry): Records {
   return { ...r, checkins: { ...r.checkins, [dateKey]: entry } }
+}
+
+/** 最近一次運動回報時間（所有日期裡最新的 exercise_at） */
+export function lastExerciseAt(r: Records): string | null {
+  let last: string | null = null
+  for (const e of Object.values(r.checkins)) {
+    if (e.exercise_done && typeof e.exercise_at === 'string' && (!last || e.exercise_at > last)) last = e.exercise_at
+  }
+  return last
+}
+
+/** 本地日期 yyyy-mm-dd（打卡的 key） */
+export function dayKey(d = new Date()) {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** 回報今日運動：寫入今天的打卡（exercise_done = true），並把 FHIR Observation 放進傳回地面的佇列 */
+export function reportExercise(r: Records, when: Date, plan: PlanId, items: string[], obs: FhirObservation): Records {
+  const key = dayKey(when)
+  const prev = r.checkins[key] ?? {}
+  return {
+    ...r,
+    checkins: { ...r.checkins, [key]: { ...prev, exercise_done: true, exercise_at: when.toISOString(), exercise_items: items, exercise_plan: plan } },
+    outbox: [...r.outbox, obs],
+  }
 }
 
 /** 清除快照（設定與打卡保留）。畫面上要先確認才呼叫 [V2 10080] */

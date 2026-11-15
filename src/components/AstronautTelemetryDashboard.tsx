@@ -3,7 +3,10 @@ import { useCabinTelemetry } from '../hooks/useCabinTelemetry'
 import { useRecords } from '../hooks/useRecords'
 import { useTelemetry } from '../hooks/useTelemetry'
 import { evalEnv, evaluate, REGION_NAME, type Context, type Region } from '../lib/assessment'
-import { makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
+import { exerciseObservation, weekStatus } from '../lib/exercise'
+import { lastExerciseAt, makeSnapshot, SNAPSHOT_EVERY_MS } from '../lib/records'
+import { DailyTasksPanel } from './hud/DailyTasksPanel'
+import { ExerciseDialog } from './hud/ExerciseDialog'
 import type { OrganId, TelemetrySource } from '../types/telemetry'
 import { CabinPanel } from './hud/CabinPanel'
 import { RecordsPanel } from './hud/RecordsPanel'
@@ -31,6 +34,16 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   /** 紀錄（localStorage）：任務設定、生命徵象與艙內快照；見 src/lib/records.ts */
   const rec = useRecords()
   const [recordsOpen, setRecordsOpen] = useState(false)
+  const [exerciseOpen, setExerciseOpen] = useState(false)
+  // 運動回報：每週 6 天規則（每分鐘重算一次，跨過午夜會自動換日）
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+  const lastExercise = lastExerciseAt(rec.records)
+  const week = useMemo(() => weekStatus(rec.records.checkins, new Date(nowTick)), [rec.records.checkins, nowTick])
+  const exerciseDone = !week.warn
   /** 任務第幾天、所在環境（新版設定頁）：會改變體溫、血壓的判斷範圍 */
   const settings = rec.records.settings
   /** 左下角艙內資料選單：none＝艙內數值收起；iss＝ISS 艙內遙測 */
@@ -52,8 +65,10 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
         spo2: data.spo2,
         temp: data.coreTemp,
         sleep: data.sleepHours,
+        exercise_done: exerciseDone,
+        exercise_week: week.sessions,
       }),
-    [ctx, data],
+    [ctx, data, exerciseDone, week.sessions],
   )
   // 艙內環境：只給左下角面板顯示，不影響人體燈號（新版原則）
   const cabinEval = useMemo(
@@ -134,8 +149,8 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
         />
       </div>
 
-      {/* 左上：任務代號 + 連線狀態 */}
-      <header className="pointer-events-none absolute left-4 top-4 z-20 md:left-6 md:top-6">
+      {/* 左上：任務代號 + 連線狀態，下方是每日任務 */}
+      <header className="pointer-events-none absolute left-4 top-4 z-20 flex flex-col gap-3 md:left-6 md:top-6">
         <div className="hud-glass hud-corner relative px-4 py-3">
           <p
             className="text-[11px] tracking-[0.32em] text-cyan-300"
@@ -155,11 +170,19 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
             NASA HRP · SELF-ASSESSMENT HUD
           </p>
         </div>
+        <div className="pointer-events-auto">
+          <DailyTasksPanel week={week} onOpenExercise={() => setExerciseOpen(true)} />
+        </div>
       </header>
 
       {/* 右側詳細面板 */}
       <div className="pointer-events-auto absolute right-4 top-4 z-20 max-h-[calc(100%-7.5rem)] overflow-y-auto md:right-6 md:top-6">
-        <RightPanel data={data} selected={selected} assessment={assessment} ctx={ctx} />
+        <RightPanel
+          data={data}
+          selected={selected}
+          assessment={assessment}
+          ctx={ctx}
+        />
       </div>
 
       {/* 左下：艙內環境（ISS 即時遙測）；手機寬度時往上移，避開底部控制列 */}
@@ -203,6 +226,20 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           />
         </div>
       </footer>
+
+      {exerciseOpen && (
+        <ExerciseDialog
+          week={week}
+          lastAt={lastExercise}
+          onReport={(plan, items) => {
+            const now = new Date()
+            rec.report(plan, items, exerciseObservation(now, ctx, plan, items))
+            setNowTick(now.getTime())
+            setExerciseOpen(false)
+          }}
+          onClose={() => setExerciseOpen(false)}
+        />
+      )}
 
       {recordsOpen && (
         <RecordsPanel

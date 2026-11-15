@@ -83,6 +83,10 @@ export type ManualInput = {
   cantdx?: boolean
   evaopen?: boolean
   helmetAt?: number | null
+  /** 運動回報模組：false＝今天沒回報而且本週休息日已用掉（每週 6 天規則）；undefined＝不判斷（例如案例回放）。見 src/lib/exercise.ts */
+  exercise_done?: boolean
+  /** 最近 7 天有運動的天數（顯示用） */
+  exercise_week?: number
 }
 
 export type Assessment = {
@@ -573,6 +577,20 @@ function evalManual(
       const dev = ((v - b) / b) * 100
       o.text += ` | ${dev > 0 ? '+' : ''}${dev.toFixed(0)}% from pre-mission baseline`
     }
+  }
+  // 運動回報（Demo 自訂，使用者指定；依據 OCHMO-TB-031、NASA/SP-20250000273，見 src/lib/exercise.ts）
+  // 每週 6 天：今天沒回報而且本週休息日已用掉 → 四肢、心臟、全身亮黃燈＋提醒
+  if (m.exercise_done === false) {
+    const src = 'Demo-defined; 6 days/week per NASA/SP-20250000273, effects per OCHMO-TB-031'
+    const wk = m.exercise_week != null ? ` (${m.exercise_week}/6 sessions in the last 7 days)` : ''
+    add('limbs', 'warn', `No training today and this week's rest day is used${wk}: bone and muscle loading missed`, src)
+    add('heart', 'warn', `No training today and this week's rest day is used${wk}: cardiovascular deconditioning risk`, src)
+    add('whole', 'warn', `Below the 6-days-a-week exercise plan${wk}`, src)
+    A(
+      'warn',
+      'self',
+      `No resistive or aerobic training reported today, and this week's rest day is already used${wk}. Per NASA OCHMO-TB-031, missing training speeds up loss of aerobic capacity, muscle strength and bone strength, and weakens sensorimotor function. Do today’s training plan soon to stay fit for duty`,
+    )
   }
   // EVA
   if (m.helmetAt) {

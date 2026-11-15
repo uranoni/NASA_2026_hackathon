@@ -21,6 +21,26 @@ const ENV_SHORT = { iss: 'ISS', transit: 'TRANSIT', moon: 'MOON', mars: 'MARS', 
 /** 顯示最近幾筆（全部都有存，只是畫面不列太多） */
 const SHOW = 30
 
+/** 匯出傳回地面佇列為 FHIR Bundle（JSON 檔）；demo 不會真的傳送 */
+function exportOutbox(records: Records) {
+  try {
+    const bundle = {
+      resourceType: 'Bundle',
+      type: 'collection',
+      timestamp: new Date().toISOString(),
+      entry: records.outbox.map((o) => ({ resource: o })),
+    }
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/fhir+json' }))
+    a.download = 'astro-health-downlink.json'
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    console.log('[records]', `匯出 ${records.outbox.length} 筆 FHIR Observation`)
+  } catch (err) {
+    console.warn('[records] 匯出失敗', err)
+  }
+}
+
 /** 紀錄面板：看最近的快照、立即存一筆、清除（要再按一次確認，[V2 10080] 無法復原的動作要確認） */
 export function RecordsPanel({ records, saveOk, onSaveNow, onClear, onClose }: Props) {
   const [confirmClear, setConfirmClear] = useState(false)
@@ -122,6 +142,13 @@ export function RecordsPanel({ records, saveOk, onSaveNow, onClear, onClose }: P
         {snaps.length > SHOW && <p className="mt-1 text-[10px] text-cyan-200/45">Showing the latest {SHOW} of {snaps.length}.</p>}
 
         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+          {/* 傳回地面佇列：目前只有運動回報（FHIR Observation） */}
+          <span className="mr-auto text-[10px] text-cyan-200/60">
+            Downlink queue: {records.outbox.length} FHIR observation{records.outbox.length === 1 ? '' : 's'} (demo, not sent)
+          </span>
+          <PanelButton onClick={() => exportOutbox(records)} disabled={records.outbox.length === 0}>
+            EXPORT FHIR
+          </PanelButton>
           <PanelButton onClick={onSaveNow}>SAVE NOW</PanelButton>
           {confirmClear ? (
             <>

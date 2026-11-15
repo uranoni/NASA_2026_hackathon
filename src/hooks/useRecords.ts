@@ -3,11 +3,13 @@ import {
   addSnapshot,
   clearSnapshots,
   loadRecords,
+  reportExercise,
   saveRecords,
   type Records,
   type Settings,
   type Snapshot,
 } from '../lib/records'
+import type { FhirObservation, PlanId } from '../lib/exercise'
 
 /** 紀錄狀態：載入一次、每次變更就寫回 localStorage（src/lib/records.ts） */
 export function useRecords() {
@@ -29,6 +31,13 @@ export function useRecords() {
     })
   }, [])
 
+  const report = useCallback((plan: PlanId, items: string[], obs: FhirObservation) => {
+    setRecords((r) => {
+      console.log('[records]', `運動回報：課表 ${plan}，完成 ${items.length} 項，已放進傳回地面佇列（共 ${r.outbox.length + 1} 筆）`)
+      return reportExercise(r, new Date(obs.effectiveDateTime), plan, items, obs)
+    })
+  }, [])
+
   const clear = useCallback(() => {
     setRecords((r) => {
       console.log('[records]', `清除 ${r.snapshots.length} 筆快照`)
@@ -36,5 +45,5 @@ export function useRecords() {
     })
   }, [])
 
-  return { records, saveOk, add, updateSettings, clear, setRecords }
+  return { records, saveOk, add, updateSettings, report, clear, setRecords }
 }
