@@ -1,12 +1,6 @@
-# NASA 2026 Crew Health Monitor
+# NASA 2026 EVA Telemetry HUD
 
-太空人健康監測（React + Three.js / R3F）。**只做「資料進來之後」**：判斷是否正常（含太空修正）、趨勢、警示、行動建議、自動傳回地面；不做量測、沒有手動輸入。
-
-- 監測畫面：`src/components/monitor/MonitoringDashboard.tsx`（預設首頁）
-- 資料接收：`src/lib/feed.ts` — 資料以 FHIR R4 Observation 送進來（LOINC 代碼），每類資料的預期送達頻率依 ISS 實際做法（每日紀錄、每月體能評估、不舒服時），該送沒送到會顯示「資料中斷」
-- 判斷邏輯：`src/lib/assessment.ts`（門檻都有出處）
-- Demo 用示範資料（畫面標示為 demo）；也可以在畫面上「Import FHIR…」匯入 FHIR Bundle
-- 舊的 3D HUD 畫面：網址加 `?view=hud`
+太空人即時生理數據 3D 監控儀表板（React + Three.js / R3F）。
 
 ## 開發
 

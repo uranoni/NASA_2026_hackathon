@@ -1,15 +1,18 @@
 import AstronautTelemetryDashboard from './components/AstronautTelemetryDashboard'
-import MonitoringDashboard from './components/monitor/MonitoringDashboard'
 
 /**
- * NASA Hackathon — Astronaut health monitoring (after data)
+ * NASA Hackathon — Astronaut self-health visual assessment tool
  *
- * 預設：監測畫面（src/components/monitor/MonitoringDashboard.tsx）
- * 舊的 3D HUD：網址加 ?view=hud
- *
- * 資料由 NASA 既有管道以 FHIR Observation 送進來（src/lib/feed.ts）；Demo 用示範資料，或在畫面上匯入 FHIR Bundle。
+ * 未來串接真實遙測範例：
+ * const source = {
+ *   connect(onData) {
+ *     const ws = new WebSocket('wss://your-telemetry.example/crew-01')
+ *     ws.onmessage = (e) => onData(JSON.parse(e.data))
+ *     return () => ws.close()
+ *   },
+ * }
+ * return <AstronautTelemetryDashboard telemetrySource={source} />
  */
 export default function App() {
-  const view = new URLSearchParams(window.location.search).get('view')
-  return view === 'hud' ? <AstronautTelemetryDashboard /> : <MonitoringDashboard />
+  return <AstronautTelemetryDashboard />
 }
