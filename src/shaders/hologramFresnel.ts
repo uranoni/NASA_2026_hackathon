@@ -6,8 +6,11 @@ import * as THREE from 'three'
 export const hologramFresnelShader = {
   uniforms: {
     uTime: { value: 0 },
-    uColor: { value: new THREE.Color('#4ad4ff') },
-    uOpacity: { value: 0.1 },
+    // 本體調暗當背景，讓部位熱點跳出來（原本 #4ad4ff、0.1，和部位同色系又一樣亮）
+    uColor: { value: new THREE.Color('#2f6f8c') },
+    uOpacity: { value: 0.05 },
+    /** 本體整體亮度；緊急狀態時會拉回 1，讓紅色警示仍然明顯 */
+    uBrightness: { value: 0.4 },
     uFresnelPower: { value: 2.6 },
     uScanEnabled: { value: 1 },
     uScanSpeed: { value: 0.28 },
@@ -34,6 +37,7 @@ export const hologramFresnelShader = {
     uniform float uScanEnabled;
     uniform float uScanSpeed;
     uniform float uAlertMix;
+    uniform float uBrightness;
 
     varying vec3 vNormal;
     varying vec3 vWorldPos;
@@ -58,6 +62,7 @@ export const hologramFresnelShader = {
       // 中心極透、邊緣發光 — 類似醫學全息圖
       float alpha = clamp(uOpacity + fresnel * 0.55 + rim * 0.2 + scanBand * 0.35, 0.02, 0.72);
       vec3 color = baseColor * (0.15 + fresnel * 2.2 + rim * 0.8 + scanBand * 1.6);
+      color *= mix(uBrightness, 1.0, uAlertMix);
 
       gl_FragColor = vec4(color, alpha);
     }

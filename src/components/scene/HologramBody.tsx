@@ -43,10 +43,11 @@ function useWireMaterial(alertMix: number) {
   const material = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: new THREE.Color('#6ef6ff'),
+        color: new THREE.Color('#3d8fa8'),
         wireframe: true,
         transparent: true,
-        opacity: 0.18,
+        // 原本 0.18：17 萬頂點的線框疊加後整個本體偏亮
+        opacity: 0.05,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       }),
@@ -55,7 +56,7 @@ function useWireMaterial(alertMix: number) {
 
   useFrame(() => {
     const alert = new THREE.Color('#ff4d6d')
-    const base = new THREE.Color('#6ef6ff')
+    const base = new THREE.Color('#3d8fa8')
     material.color.copy(base).lerp(alert, alertMix)
   })
 

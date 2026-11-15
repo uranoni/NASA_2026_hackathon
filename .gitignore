@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.local
 .npmrc
+
+# Blender 修改前的模型備份（見 docs/blender-model-guide.md）
+*.orig.glb

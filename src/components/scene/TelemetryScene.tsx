@@ -131,7 +131,8 @@ function SceneContent(props: SceneProps) {
       <EffectComposer multisampling={0}>
         <Bloom
           intensity={1.55}
-          luminanceThreshold={0.18}
+          // 原本 0.18：幾乎全部都暈開，本體和部位糊在一起；調高後只剩部位發光
+          luminanceThreshold={0.55}
           luminanceSmoothing={0.45}
           mipmapBlur
         />
