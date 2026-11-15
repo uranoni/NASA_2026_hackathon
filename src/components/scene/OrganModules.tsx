@@ -23,6 +23,7 @@ type Props = {
  * 正常一律白／淺青；選取不換色，改用亮度＋選取環表示（[V2 10045] 顏色不能是唯一提示）
  */
 const TONE = {
+  // 所有可點部位共用同一色（使用者要求，避免突兀）；重疊處改用不透明度分層，見 restOpacity
   normal: '#c8f1ff',
   caution: '#ffd23f',
   warning: '#ff2a55',
@@ -37,10 +38,13 @@ function GlowMat({
   color,
   selected,
   intensity = 1,
+  restOpacity = 0.6,
 }: {
   color: string
   selected: boolean
   intensity?: number
+  /** 未選取時的不透明度；重疊時，前面的小部位調高、外面的大器官調低 */
+  restOpacity?: number
 }) {
   return (
     <meshStandardMaterial
@@ -49,7 +53,7 @@ function GlowMat({
       // 未選取時壓低亮度，選取時才變亮
       emissiveIntensity={(selected ? 2.4 : 0.55) * intensity}
       transparent
-      opacity={selected ? 0.95 : 0.6}
+      opacity={selected ? 0.95 : restOpacity}
       roughness={0.22}
       metalness={0.35}
       depthWrite={false}
@@ -65,7 +69,7 @@ function HitProxy({
 }: {
   id: OrganId
   onSelect: (id: OrganId) => void
-  onHover: (id: OrganId | null) => void
+  onHover: (update: (prev: OrganId | null) => OrganId | null) => void
   /** 點擊範圍半徑；眼、頸靠近頭部，要縮小避免互相蓋住 */
   radius?: number
 }) {
@@ -79,11 +83,12 @@ function HitProxy({
       onPointerOver={(e) => {
         e.stopPropagation()
         document.body.style.cursor = 'pointer'
-        onHover(id)
+        onHover(() => id)
       }}
       onPointerOut={() => {
         document.body.style.cursor = 'default'
-        onHover(null)
+        // 只清掉自己：滑到相鄰部位時，新部位的 over 可能比舊部位的 out 先到，直接設 null 會讓標籤閃掉
+        onHover((prev) => (prev === id ? null : prev))
       }}
     >
       <sphereGeometry args={[radius, 8, 8]} />
@@ -149,11 +154,14 @@ function OrganModel({
   size,
   color,
   selected,
+  restOpacity = 0.6,
 }: {
   url: string
   size: number
   color: string
   selected: boolean
+  /** 同 GlowMat：未選取時的不透明度 */
+  restOpacity?: number
 }) {
   const { scene } = useGLTF(url)
   const material = useMemo(
@@ -172,8 +180,8 @@ function OrganModel({
     material.color.set(color)
     material.emissive.set(color)
     material.emissiveIntensity = selected ? 2.4 : 0.55
-    material.opacity = selected ? 0.95 : 0.6
-  }, [material, color, selected])
+    material.opacity = selected ? 0.95 : restOpacity
+  }, [material, color, selected, restOpacity])
 
   const object = useMemo(() => {
     const root = scene.clone(true)
@@ -185,8 +193,7 @@ function OrganModel({
         mesh.raycast = () => {}
       }
     })
-    // 和人體模型同一來源、同一匯出方式，比照人體轉 180° 朝向相機
-    root.rotation.y = Math.PI
+    // 和人體模型同一來源、同一匯出方式，原始朝向就是正面朝 +z（相機），不用旋轉
     const box = new THREE.Box3().setFromObject(root)
     const dims = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
@@ -270,33 +277,14 @@ function BrainMesh({ color, selected }: { color: string; selected: boolean }) {
   )
 }
 
-function CoreMesh({ color, selected }: { color: string; selected: boolean }) {
-  return (
-    <group>
-      {/* 肌群塊面 — 類似參考圖強調的腹腔器官體積感 */}
-      <mesh position={[0.02, -0.02, 0.02]} rotation={[0.15, 0.3, -0.1]} scale={[1.15, 0.85, 0.7]}>
-        <sphereGeometry args={[0.09, 20, 16]} />
-        <GlowMat color={color} selected={selected} intensity={1.2} />
-      </mesh>
-      <mesh position={[-0.05, 0.02, 0]} rotation={[-0.1, -0.2, 0.2]} scale={[0.7, 0.9, 0.55]}>
-        <sphereGeometry args={[0.06, 16, 12]} />
-        <GlowMat color={color} selected={selected} intensity={0.95} />
-      </mesh>
-      <mesh position={[0, 0.08, -0.01]}>
-        <cylinderGeometry args={[0.012, 0.016, 0.12, 8]} />
-        <GlowMat color={color} selected={selected} intensity={0.7} />
-      </mesh>
-    </group>
-  )
-}
-
 function EyesMesh({ color, selected }: { color: string; selected: boolean }) {
   return (
     <group>
       {[-0.032, 0.032].map((x) => (
         <mesh key={x} position={[x, 0, 0]} scale={[1.3, 0.8, 0.7]}>
           <sphereGeometry args={[0.014, 14, 10]} />
-          <GlowMat color={color} selected={selected} intensity={1.3} />
+          {/* 眼在腦的前面，不透明度調高才不會被腦的光蓋過 */}
+          <GlowMat color={color} selected={selected} intensity={1.3} restOpacity={0.9} />
         </mesh>
       ))}
     </group>
@@ -338,8 +326,8 @@ function LimbSegment({ color, selected }: { color: string; selected: boolean }) 
 const LIMB_SPOTS: { position: [number, number, number]; tilt: number }[] = [
   { position: [-0.31, 1.18, 0.0], tilt: -0.38 },
   { position: [0.31, 1.18, 0.0], tilt: 0.38 },
-  { position: [-0.11, 0.36, 0.05], tilt: 0 },
-  { position: [0.11, 0.36, 0.05], tilt: 0 },
+  { position: [-0.11, 0.36, -0.05], tilt: 0 },
+  { position: [0.11, 0.36, -0.05], tilt: 0 },
 ]
 
 function FloatingLabel({
@@ -366,25 +354,27 @@ function FloatingLabel({
     <group>
       <Line points={points} color={accent} lineWidth={1} transparent opacity={0.5} />
       {/* zIndexRange：drei 預設 z-index 約 1677 萬，會蓋在右側面板（z-20）上面；壓到 10 以下 */}
+      {/* 不設 distanceFactor：原本標籤會隨相機遠近縮放，選取時相機移動、縮放視角都會忽大忽小，改成固定像素大小 */}
       <Html
         position={meta.labelOffset}
-        distanceFactor={8}
         zIndexRange={[10, 0]}
         style={{ pointerEvents: 'none' }}
       >
         <div
           style={{
             fontFamily: '"Share Tech Mono", monospace',
-            fontSize: 11,
+            // hover 和點擊都用同一個大框（原本 11px，固定大小後顯得太小）
+            fontSize: 19,
             letterSpacing: '0.1em',
             color: accent,
-            background: 'rgba(2, 12, 28, 0.65)',
-            border: `1px solid ${accent}66`,
+            background: 'rgba(2, 12, 28, 0.75)',
+            border: `1px solid ${accent}88`,
             backdropFilter: 'blur(10px)',
-            padding: '6px 10px',
+            padding: '10px 18px',
             whiteSpace: 'nowrap',
             boxShadow: `0 0 20px ${accent}40`,
-            transform: 'translate(-50%, -50%)',
+            // 標籤都在人體左邊：框的右緣對齊連接線末端，往左長，不會蓋到人體
+            transform: 'translate(-100%, -50%)',
           }}
         >
           {text}
@@ -403,18 +393,33 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
 
   // 門檻沿用原本的值（心率 >110、疲勞 >70，出處待補），只把顏色改成狀態色
   const heartColor = organTone(heartAlert ? 'warning' : 'normal')
-  const coreColor = organTone(fatigueCaution ? 'caution' : 'normal')
-  // 腦、肺、眼、頸、四肢目前沒有判斷，一律正常色
+  // 肌肉疲勞原本掛在腹部的 core，改顯示在四肢
+  const limbsColor = organTone(fatigueCaution ? 'caution' : 'normal')
+  // 異常的部位不用選取也維持高亮，緊急時一眼看出是哪裡出事
+  const heartLit = selected === 'heart' || heartAlert
+  const limbsLit = selected === 'limbs' || fatigueCaution
+  // 腦、肺、眼、頸目前沒有判斷，一律正常色
   const normalColor = organTone('normal')
   const lungColor = normalColor
   const brainColor = normalColor
   const eyesColor = normalColor
   const neckColor = normalColor
-  const limbsColor = normalColor
+
+  /**
+   * 暫時解法：預設選取心臟時，重整後只出現連接線、沒有數值框；重新點一次就正常。
+   * 推測是 drei <Html> 在場景剛建立時（React 19 StrictMode 會掛載兩次）第一次掛載，
+   * 內容沒有畫出來。所以等場景畫完幾個畫面後才掛載標籤，等同「重新點一次」的路徑。
+   * 根因未確認：正式版（vite build，沒有 StrictMode 的重複掛載）若沒有這個問題，就是 StrictMode 造成的。
+   */
+  const [labelsReady, setLabelsReady] = useState(false)
+  const readyFrames = useRef(0)
+  useFrame(() => {
+    if (!labelsReady && ++readyFrames.current > 3) setLabelsReady(true)
+  })
 
   /** 標籤只在選取、滑鼠移上、或異常時顯示 */
   const showLabel = (id: OrganId, abnormal = false) =>
-    selected === id || hovered === id || abnormal
+    labelsReady && (selected === id || hovered === id || abnormal)
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
@@ -434,19 +439,20 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
         {/* 真實心臟約 12 cm 高（模型本身 0.098 × 0.069 × 0.121 m），size 取最長邊 */}
         <ModelErrorBoundary
           url={HEART_GLB_URL}
-          fallback={<HeartMesh color={heartColor} selected={selected === 'heart'} />}
+          fallback={<HeartMesh color={heartColor} selected={heartLit} />}
         >
-          <Suspense fallback={<HeartMesh color={heartColor} selected={selected === 'heart'} />}>
+          <Suspense fallback={<HeartMesh color={heartColor} selected={heartLit} />}>
             <OrganModel
               url={HEART_GLB_URL}
               size={0.12}
               color={heartColor}
-              selected={selected === 'heart'}
+              selected={heartLit}
+              restOpacity={0.9}
             />
           </Suspense>
         </ModelErrorBoundary>
         <SelectRing color={heartColor} visible={selected === 'heart'} />
-        {/* 背視圖下心臟在肺後面；點擊範圍往相機方向推 0.08，中間點下去優先選到心臟 */}
+        {/* 心臟和肺的點擊範圍重疊；心臟往相機方向推 0.08，胸口中間點下去優先選到心臟 */}
         <group position={[0, 0, 0.08]}>
           <HitProxy id="heart" onSelect={onSelect} onHover={setHovered} radius={0.08} />
         </group>
@@ -464,6 +470,8 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
               size={0.28}
               color={lungColor}
               selected={selected === 'lungs'}
+              // 肺包住心臟，平時調淡讓心臟透出來
+              restOpacity={0.3}
             />
           </Suspense>
         </ModelErrorBoundary>
@@ -488,6 +496,8 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
               size={0.16}
               color={brainColor}
               selected={selected === 'brain'}
+              // 腦在眼睛後方，平時調淡讓眼睛透出來
+              restOpacity={0.3}
             />
           </Suspense>
         </ModelErrorBoundary>
@@ -510,17 +520,11 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
 
       {LIMB_SPOTS.map((spot) => (
         <group key={spot.position.join(',')} position={spot.position} rotation={[0, 0, spot.tilt]}>
-          <LimbSegment color={limbsColor} selected={selected === 'limbs'} />
+          <LimbSegment color={limbsColor} selected={limbsLit} />
           <SelectRing color={limbsColor} visible={selected === 'limbs'} radius={0.06} />
           <HitProxy id="limbs" onSelect={onSelect} onHover={setHovered} radius={0.07} />
         </group>
       ))}
-
-      <group position={ORGAN_META.core.position}>
-        <CoreMesh color={coreColor} selected={selected === 'core'} />
-        <SelectRing color={coreColor} visible={selected === 'core'} />
-        <HitProxy id="core" onSelect={onSelect} onHover={setHovered} />
-      </group>
 
       <FloatingLabel id="heart" text={`HR ${metrics.heartRate.toFixed(0)} BPM`} accent={heartColor}
         visible={showLabel('heart', heartAlert)}
@@ -529,12 +533,11 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
       <FloatingLabel id="brain" text="CNS LINK" accent={brainColor} visible={showLabel('brain')} />
       <FloatingLabel id="eyes" text="VISION" accent={eyesColor} visible={showLabel('eyes')} />
       <FloatingLabel id="neck" text="NECK VEIN" accent={neckColor} visible={showLabel('neck')} />
-      <FloatingLabel id="limbs" text="LIMBS" accent={limbsColor} visible={showLabel('limbs')} />
       <FloatingLabel
-        id="core"
+        id="limbs"
         text={`FATIGUE ${metrics.muscleFatigue.toFixed(0)}%`}
-        accent={coreColor}
-        visible={showLabel('core', fatigueCaution)}
+        accent={limbsColor}
+        visible={showLabel('limbs', fatigueCaution)}
       />
     </group>
   )

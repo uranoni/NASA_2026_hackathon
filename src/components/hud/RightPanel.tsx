@@ -91,7 +91,7 @@ export function RightPanel({ data, selected }: Props) {
         <p className="mt-2 text-xs leading-relaxed text-cyan-100/80">
           {organ
             ? organ.guidance
-            : 'Click Brain / Eyes / Neck / Heart / Lungs / Core / Limbs on the hologram to inspect system-specific status against Artemis mission health hazards (radiation, isolation, distance, gravity, closed environment).'}
+            : 'Click Brain / Eyes / Neck / Heart / Lungs / Limbs on the hologram to inspect system-specific status against Artemis mission health hazards (radiation, isolation, distance, gravity, closed environment).'}
         </p>
         {(hrWarn || spo2Warn || fatigueWarn || radWarn || data.emergency) && (
           <p className="mt-2 text-xs tracking-wide text-[#ff2a55]">

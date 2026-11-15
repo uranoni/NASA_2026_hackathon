@@ -45,7 +45,8 @@ export const hologramFresnelShader = {
 
     void main() {
       vec3 alertColor = vec3(1.0, 0.25, 0.4);
-      vec3 baseColor = mix(uColor, alertColor, uAlertMix);
+      // 緊急時本體只帶一半紅色，重點留給出問題的部位（原本整個轉成紅色，看不出是哪裡出事）
+      vec3 baseColor = mix(uColor, alertColor, uAlertMix * 0.5);
 
       float ndotv = max(dot(normalize(vNormal), normalize(vViewDir)), 0.0);
       float fresnel = pow(1.0 - ndotv, uFresnelPower);
@@ -62,7 +63,10 @@ export const hologramFresnelShader = {
       // 中心極透、邊緣發光 — 類似醫學全息圖
       float alpha = clamp(uOpacity + fresnel * 0.55 + rim * 0.2 + scanBand * 0.35, 0.02, 0.72);
       vec3 color = baseColor * (0.15 + fresnel * 2.2 + rim * 0.8 + scanBand * 1.6);
-      color *= mix(uBrightness, 1.0, uAlertMix);
+      // 緊急時亮度 0.4 → 0.6（原本拉到 1.0，加上泛光整片糊掉），並以每秒約 0.8 次緩慢呼吸
+      // 低於 3 Hz，避免快速閃爍造成不適
+      float pulse = 0.8 + 0.2 * sin(uTime * 5.0);
+      color *= mix(uBrightness, 0.6 * pulse, uAlertMix);
 
       gl_FragColor = vec4(color, alpha);
     }

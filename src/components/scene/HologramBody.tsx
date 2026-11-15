@@ -57,7 +57,8 @@ function useWireMaterial(alertMix: number) {
   useFrame(() => {
     const alert = new THREE.Color('#ff4d6d')
     const base = new THREE.Color('#3d8fa8')
-    material.color.copy(base).lerp(alert, alertMix)
+    // 線框同本體，只帶一半紅色
+    material.color.copy(base).lerp(alert, alertMix * 0.5)
   })
 
   return material
@@ -147,8 +148,7 @@ function RealisticBody({
           mesh.frustumCulled = true
         }
       })
-      // 若匯出朝向不同，微轉對齊正面
-      root.rotation.y = Math.PI
+      // 原本轉 180°，結果畫面是背視圖（腳尖朝遠離相機的方向）。原始朝向就是正面朝 +z，不用旋轉
       return root
     }
 
