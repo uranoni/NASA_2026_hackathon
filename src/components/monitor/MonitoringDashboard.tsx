@@ -476,7 +476,7 @@ export default function MonitoringDashboard() {
                 heartRate={input.hr ?? 70}
               />
             </div>
-            <p className="mt-1 text-center text-[11px] text-slate-500">Drag to turn · scroll or pinch to zoom · click a part to zoom in and filter</p>
+            <p className="mt-1 text-center text-[11px] text-slate-500">Drag left/right to turn · up/down to move · scroll or pinch to zoom · click a part to zoom in and filter</p>
             <ul className="mt-2 space-y-0.5">
               {REGION_ORDER.map((id) => {
                 const info = regionInfo(id)
