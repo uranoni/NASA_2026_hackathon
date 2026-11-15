@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useCabinTelemetry } from '../hooks/useCabinTelemetry'
 import { useTelemetry } from '../hooks/useTelemetry'
+import { evaluate, REGION_NAME, type Region } from '../lib/assessment'
 import type { OrganId, TelemetrySource } from '../types/telemetry'
+import { CabinPanel, type Environment } from './hud/CabinPanel'
 import { RightPanel } from './hud/RightPanel'
 import { TelemetryScene } from './scene/TelemetryScene'
 
@@ -21,7 +24,34 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   const [scanEnabled, setScanEnabled] = useState(true)
   const [resetToken, setResetToken] = useState(0)
 
-  const alertActive = data.emergency || data.heartRate > 110
+  const cabin = useCabinTelemetry()
+  /** 左下角環境下拉選單：none＝面板收起、環境不列入判斷；iss＝ISS 艙內遙測 */
+  const [env, setEnv] = useState<Environment>('iss')
+
+  /**
+   * 判斷邏輯移植自 iss_demo.html（src/lib/assessment.ts）。repo 沒有手動輸入，只把遙測裡有的數值填進去：
+   * 心率、血壓、血氧、體溫、睡眠，加上 repo 原有的肌肉疲勞、輻射劑量率。
+   * 情緒（repo 是 0–100，原版是 1–5 分）、輻射（repo 是 mGy/h，原版是 mSv）單位不同，不硬換算，所以情緒不判斷。
+   * 作業模式固定為「一般作業」，repo 沒有切換。
+   */
+  const assessment = useMemo(
+    () =>
+      evaluate(env === 'iss' ? cabin.readings() : null, 'work', {
+        hr: data.heartRate,
+        sbp: data.bloodPressureSys,
+        dbp: data.bloodPressureDia,
+        spo2: data.spo2,
+        temp: data.coreTemp,
+        sleep: data.sleepHours,
+        fatigue: data.muscleFatigue,
+        radMgyH: data.radiationDose,
+      }),
+    [cabin.readings, data, env],
+  )
+
+  const badRegions = (Object.keys(assessment.level) as Region[]).filter((k) => assessment.level[k] === 'bad')
+  const badCabin = assessment.cards.filter((c) => c.lv === 'bad')
+  const alertActive = data.emergency || assessment.overall === 'bad'
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#020617]">
@@ -55,6 +85,8 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           scanEnabled={scanEnabled}
           emergency={data.emergency}
           resetToken={resetToken}
+          levels={assessment.level}
+          alert={alertActive}
         />
       </div>
 
@@ -83,7 +115,25 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
 
       {/* 右側詳細面板 */}
       <div className="pointer-events-auto absolute right-4 top-4 z-20 max-h-[calc(100%-7.5rem)] overflow-y-auto md:right-6 md:top-6">
-        <RightPanel data={data} selected={selected} />
+        <RightPanel data={data} selected={selected} assessment={assessment} />
+      </div>
+
+      {/* 左下：艙內環境（ISS 即時遙測）；手機寬度時往上移，避開底部控制列 */}
+      <div className="pointer-events-auto absolute bottom-24 left-4 z-20 md:bottom-6 md:left-6">
+        <CabinPanel
+          env={env}
+          onEnv={(e) => {
+            console.log('[ISS cabin]', '環境選單切換為：' + e)
+            setEnv(e)
+          }}
+          cards={assessment.cards}
+          status={cabin.status}
+          sim={cabin.sim}
+          onSim={(s) => {
+            console.log('[ISS cabin]', s ? '環境切換到模擬情境：' + s : '環境切換回 ISS 即時資料')
+            cabin.setSim(s)
+          }}
+        />
       </div>
 
       {/* 底部控制列 */}
@@ -114,7 +164,9 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
       {alertActive && (
         <div className="pointer-events-none absolute left-1/2 top-[4.8rem] z-20 -translate-x-1/2">
           <div className="border border-[#ff2a55]/70 bg-[#2a0610]/75 px-4 py-1.5 text-[11px] tracking-[0.28em] text-[#ff2a55] backdrop-blur-md">
-            CARDIOVASCULAR ALERT // HR {data.heartRate.toFixed(0)} BPM
+            {badRegions.length || badCabin.length
+              ? `WARNING // ${[...badRegions.map((k) => REGION_NAME[k]), ...badCabin.map((c) => c.name.toUpperCase())].join(' · ')}`
+              : `SIMULATED EMERGENCY // HR ${data.heartRate.toFixed(0)} BPM`}
           </div>
         </div>
       )}

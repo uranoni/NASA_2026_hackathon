@@ -2,6 +2,7 @@ import { Html, Line, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
+import type { Level, Region } from '../../lib/assessment'
 import { ORGAN_META, type OrganId } from '../../types/telemetry'
 
 type Metrics = {
@@ -15,7 +16,8 @@ type Props = {
   metrics: Metrics
   selected: OrganId | null
   onSelect: (id: OrganId) => void
-  alert: boolean
+  /** 各部位判斷結果（src/lib/assessment.ts）：warn＝黃、bad＝紅 */
+  levels: Record<Region, Level>
 }
 
 /**
@@ -384,26 +386,26 @@ function FloatingLabel({
   )
 }
 
-export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
+const LEVEL_TONE: Record<Level, Status> = { ok: 'normal', warn: 'caution', bad: 'warning' }
+
+export function OrganModules({ metrics, selected, onSelect, levels }: Props) {
   const heartRef = useRef<THREE.Group>(null)
   const lungsRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState<OrganId | null>(null)
-  const heartAlert = metrics.heartRate > 110 || alert
-  const fatigueCaution = metrics.muscleFatigue > 70
 
-  // 門檻沿用原本的值（心率 >110、疲勞 >70，出處待補），只把顏色改成狀態色
-  const heartColor = organTone(heartAlert ? 'warning' : 'normal')
-  // 肌肉疲勞原本掛在腹部的 core，改顯示在四肢
-  const limbsColor = organTone(fatigueCaution ? 'caution' : 'normal')
-  // 異常的部位不用選取也維持高亮，緊急時一眼看出是哪裡出事
-  const heartLit = selected === 'heart' || heartAlert
-  const limbsLit = selected === 'limbs' || fatigueCaution
-  // 腦、肺、眼、頸目前沒有判斷，一律正常色
-  const normalColor = organTone('normal')
-  const lungColor = normalColor
-  const brainColor = normalColor
-  const eyesColor = normalColor
-  const neckColor = normalColor
+  // 顏色由判斷邏輯決定（移植自 iss_demo.html，門檻與出處見 Demo判斷依據.md）
+  const abnormal = (id: OrganId) => levels[id] !== 'ok'
+  const toneOf = (id: OrganId) => organTone(LEVEL_TONE[levels[id]])
+  const heartColor = toneOf('heart')
+  const limbsColor = toneOf('limbs')
+  const lungColor = toneOf('lungs')
+  const brainColor = toneOf('brain')
+  const eyesColor = toneOf('eyes')
+  const neckColor = toneOf('neck')
+  // 異常的部位不用選取也維持高亮，一眼看出是哪裡出事
+  const lit = (id: OrganId) => selected === id || abnormal(id)
+  const heartLit = lit('heart')
+  const limbsLit = lit('limbs')
 
   /**
    * 暫時解法：預設選取心臟時，重整後只出現連接線、沒有數值框；重新點一次就正常。
@@ -461,15 +463,15 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
       <group ref={lungsRef} position={ORGAN_META.lungs.position}>
         <ModelErrorBoundary
           url={LUNGS_GLB_URL}
-          fallback={<LungsMesh color={lungColor} selected={selected === 'lungs'} />}
+          fallback={<LungsMesh color={lungColor} selected={lit('lungs')} />}
         >
-          <Suspense fallback={<LungsMesh color={lungColor} selected={selected === 'lungs'} />}>
+          <Suspense fallback={<LungsMesh color={lungColor} selected={lit('lungs')} />}>
             {/* 位置已在 ORGAN_META.lungs 置中，不再另外位移 */}
             <OrganModel
               url={LUNGS_GLB_URL}
               size={0.28}
               color={lungColor}
-              selected={selected === 'lungs'}
+              selected={lit('lungs')}
               // 肺包住心臟，平時調淡讓心臟透出來
               restOpacity={0.3}
             />
@@ -487,15 +489,15 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
       <group position={ORGAN_META.brain.position}>
         <ModelErrorBoundary
           url={BRAIN_GLB_URL}
-          fallback={<BrainMesh color={brainColor} selected={selected === 'brain'} />}
+          fallback={<BrainMesh color={brainColor} selected={lit('brain')} />}
         >
-          <Suspense fallback={<BrainMesh color={brainColor} selected={selected === 'brain'} />}>
+          <Suspense fallback={<BrainMesh color={brainColor} selected={lit('brain')} />}>
             {/* 最長邊 0.17 → 0.16：頭部只到 1.80 m，原尺寸頂部會貼齊頭頂，略縮留出顱骨厚度 */}
             <OrganModel
               url={BRAIN_GLB_URL}
               size={0.16}
               color={brainColor}
-              selected={selected === 'brain'}
+              selected={lit('brain')}
               // 腦在眼睛後方，平時調淡讓眼睛透出來
               restOpacity={0.3}
             />
@@ -507,13 +509,13 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
       </group>
 
       <group position={ORGAN_META.eyes.position}>
-        <EyesMesh color={eyesColor} selected={selected === 'eyes'} />
+        <EyesMesh color={eyesColor} selected={lit('eyes')} />
         <SelectRing color={eyesColor} visible={selected === 'eyes'} radius={0.06} />
         <HitProxy id="eyes" onSelect={onSelect} onHover={setHovered} radius={0.045} />
       </group>
 
       <group position={ORGAN_META.neck.position}>
-        <NeckMesh color={neckColor} selected={selected === 'neck'} />
+        <NeckMesh color={neckColor} selected={lit('neck')} />
         <SelectRing color={neckColor} visible={selected === 'neck'} radius={0.07} />
         <HitProxy id="neck" onSelect={onSelect} onHover={setHovered} radius={0.05} />
       </group>
@@ -527,17 +529,17 @@ export function OrganModules({ metrics, selected, onSelect, alert }: Props) {
       ))}
 
       <FloatingLabel id="heart" text={`HR ${metrics.heartRate.toFixed(0)} BPM`} accent={heartColor}
-        visible={showLabel('heart', heartAlert)}
+        visible={showLabel('heart', abnormal('heart'))}
       />
-      <FloatingLabel id="lungs" text={`SpO₂ ${metrics.spo2.toFixed(1)}%`} accent={lungColor} visible={showLabel('lungs')} />
-      <FloatingLabel id="brain" text="CNS LINK" accent={brainColor} visible={showLabel('brain')} />
-      <FloatingLabel id="eyes" text="VISION" accent={eyesColor} visible={showLabel('eyes')} />
-      <FloatingLabel id="neck" text="NECK VEIN" accent={neckColor} visible={showLabel('neck')} />
+      <FloatingLabel id="lungs" text={`SpO₂ ${metrics.spo2.toFixed(1)}%`} accent={lungColor} visible={showLabel('lungs', abnormal('lungs'))} />
+      <FloatingLabel id="brain" text="CNS LINK" accent={brainColor} visible={showLabel('brain', abnormal('brain'))} />
+      <FloatingLabel id="eyes" text="VISION" accent={eyesColor} visible={showLabel('eyes', abnormal('eyes'))} />
+      <FloatingLabel id="neck" text="NECK VEIN" accent={neckColor} visible={showLabel('neck', abnormal('neck'))} />
       <FloatingLabel
         id="limbs"
         text={`FATIGUE ${metrics.muscleFatigue.toFixed(0)}%`}
         accent={limbsColor}
-        visible={showLabel('limbs', fatigueCaution)}
+        visible={showLabel('limbs', abnormal('limbs'))}
       />
     </group>
   )

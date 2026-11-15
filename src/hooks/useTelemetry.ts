@@ -15,7 +15,7 @@ const BASE: TelemetryState = {
   respRate: 14,
   bloodPressureSys: 118,
   bloodPressureDia: 76,
-  sleepHours: 6.4,
+  sleepHours: 7,
   moodIndex: 78,
 }
 

@@ -4,6 +4,7 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { Suspense, useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
+import type { Level, Region } from '../../lib/assessment'
 import type { OrganId } from '../../types/telemetry'
 import { ORGAN_META } from '../../types/telemetry'
 import { HologramBody } from './HologramBody'
@@ -20,6 +21,10 @@ type SceneProps = {
   scanEnabled: boolean
   emergency: boolean
   resetToken: number
+  /** 各部位判斷結果（src/lib/assessment.ts） */
+  levels: Record<Region, Level>
+  /** 整體有「警告」或按了緊急模擬：本體帶紅光 */
+  alert: boolean
 }
 
 function CameraFocus({
@@ -64,7 +69,7 @@ function CameraFocus({
 
 function SceneContent(props: SceneProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null)
-  const alertMix = props.emergency || props.heartRate > 110 ? 1 : 0
+  const alertMix = props.alert ? 1 : 0
 
   return (
     <>
@@ -98,7 +103,7 @@ function SceneContent(props: SceneProps) {
           }}
           selected={props.selected}
           onSelect={props.onSelect}
-          alert={props.emergency}
+          levels={props.levels}
         />
       </group>
 
