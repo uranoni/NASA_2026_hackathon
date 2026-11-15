@@ -24,6 +24,8 @@ type Props = {
   hideLabels?: boolean
   /** 滑鼠移到部位上時通知外面（監測頁用來對應外面的清單） */
   onHoverChange?: (id: OrganId | null) => void
+  /** true＝選取某個部位時，其他部位調淡（監測頁拉近時用）；預設 false，舊 HUD 不受影響 */
+  dimOthers?: boolean
 }
 
 /**
@@ -396,7 +398,49 @@ function FloatingLabel({
 
 const LEVEL_TONE: Record<Level, Status> = { ok: 'normal', warn: 'caution', bad: 'warning' }
 
-export function OrganModules({ metrics, selected, onSelect, levels, limbParts, hideLabels = false, onHoverChange }: Props) {
+/** 調淡後的不透明度倍率 */
+const DIM_FACTOR = 0.15
+const NOOP = () => {}
+
+/**
+ * 把裡面所有 mesh 的不透明度乘上倍率（平滑過渡）。
+ * 只在畫這個 mesh 的當下改材質、畫完馬上還原，所以不管各部位元件自己怎麼設定材質都不受影響。
+ */
+function Dim({ on, children }: { on: boolean; children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null)
+  const factor = useRef(1)
+  useFrame((_, delta) => {
+    const g = ref.current
+    if (!g) return
+    factor.current = THREE.MathUtils.lerp(factor.current, on ? DIM_FACTOR : 1, 1 - Math.exp(-delta * 8))
+    const k = factor.current
+    const active = k < 0.995
+    g.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      if (!active) {
+        mesh.onBeforeRender = NOOP
+        mesh.onAfterRender = NOOP
+        return
+      }
+      mesh.onBeforeRender = (_r, _s, _c, _g, material) => {
+        material.userData.__dim = [material.opacity, material.transparent]
+        material.opacity *= k
+        material.transparent = true
+      }
+      mesh.onAfterRender = (_r, _s, _c, _g, material) => {
+        const saved = material.userData.__dim as [number, boolean] | undefined
+        if (!saved) return
+        material.opacity = saved[0]
+        material.transparent = saved[1]
+        delete material.userData.__dim
+      }
+    })
+  })
+  return <group ref={ref}>{children}</group>
+}
+
+export function OrganModules({ metrics, selected, onSelect, levels, limbParts, hideLabels = false, onHoverChange, dimOthers = false }: Props) {
   const heartRef = useRef<THREE.Group>(null)
   const lungsRef = useRef<THREE.Group>(null)
   const [hovered, setHovered] = useState<OrganId | null>(null)
@@ -433,6 +477,11 @@ export function OrganModules({ metrics, selected, onSelect, levels, limbParts, h
   })
 
   /** 標籤只在選取、滑鼠移上、或異常時顯示 */
+  /** 選取某部位時，其他部位調淡 */
+  const dim = (id: OrganId) => dimOthers && selected !== null && selected !== id
+  /** 選取環：調淡模式下已經看得出選了哪個，而且鏡頭鎖在水平時環會變成一條橫線擋住部位，所以不畫 */
+  const ring = (id: OrganId) => !dimOthers && selected === id
+
   const showLabel = (id: OrganId, abnormal = false) =>
     !hideLabels && labelsReady && (selected === id || hovered === id || abnormal)
 
@@ -450,6 +499,7 @@ export function OrganModules({ metrics, selected, onSelect, levels, limbParts, h
 
   return (
     <group>
+      <Dim on={dim('heart')}>
       <group ref={heartRef} position={ORGAN_META.heart.position}>
         {/* 真實心臟約 12 cm 高（模型本身 0.098 × 0.069 × 0.121 m），size 取最長邊 */}
         <ModelErrorBoundary
@@ -466,13 +516,15 @@ export function OrganModules({ metrics, selected, onSelect, levels, limbParts, h
             />
           </Suspense>
         </ModelErrorBoundary>
-        <SelectRing color={heartColor} visible={selected === 'heart'} />
+        <SelectRing color={heartColor} visible={ring('heart')} />
         {/* 心臟和肺的點擊範圍重疊；心臟往相機方向推 0.08，胸口中間點下去優先選到心臟 */}
         <group position={[0, 0, 0.08]}>
           <HitProxy id="heart" onSelect={onSelect} onHover={setHovered} radius={0.08} />
         </group>
       </group>
+      </Dim>
 
+      <Dim on={dim('lungs')}>
       <group ref={lungsRef} position={ORGAN_META.lungs.position}>
         <ModelErrorBoundary
           url={LUNGS_GLB_URL}
@@ -490,7 +542,7 @@ export function OrganModules({ metrics, selected, onSelect, levels, limbParts, h
             />
           </Suspense>
         </ModelErrorBoundary>
-        <SelectRing color={lungColor} visible={selected === 'lungs'} />
+        <SelectRing color={lungColor} visible={ring('lungs')} />
         {/* 左右肺各一個點擊範圍，讓出中間給心臟 */}
         {[-0.09, 0.09].map((x) => (
           <group key={x} position={[x, 0, 0]}>
@@ -498,7 +550,9 @@ export function OrganModules({ metrics, selected, onSelect, levels, limbParts, h
           </group>
         ))}
       </group>
+      </Dim>
 
+      <Dim on={dim('brain')}>
       <group position={ORGAN_META.brain.position}>
         <ModelErrorBoundary
           url={BRAIN_GLB_URL}
@@ -516,30 +570,37 @@ export function OrganModules({ metrics, selected, onSelect, levels, limbParts, h
             />
           </Suspense>
         </ModelErrorBoundary>
-        <SelectRing color={brainColor} visible={selected === 'brain'} />
+        <SelectRing color={brainColor} visible={ring('brain')} />
         {/* 半徑 0.08：前緣不超過眼睛熱點，正面點眼睛時不會先點到腦 */}
         <HitProxy id="brain" onSelect={onSelect} onHover={setHovered} radius={0.08} />
       </group>
+      </Dim>
 
+      <Dim on={dim('eyes')}>
       <group position={ORGAN_META.eyes.position}>
         <EyesMesh color={eyesColor} selected={lit('eyes')} />
-        <SelectRing color={eyesColor} visible={selected === 'eyes'} radius={0.06} />
+        <SelectRing color={eyesColor} visible={ring('eyes')} radius={0.06} />
         <HitProxy id="eyes" onSelect={onSelect} onHover={setHovered} radius={0.045} />
       </group>
+      </Dim>
 
+      <Dim on={dim('neck')}>
       <group position={ORGAN_META.neck.position}>
         <NeckMesh color={neckColor} selected={lit('neck')} />
-        <SelectRing color={neckColor} visible={selected === 'neck'} radius={0.07} />
+        <SelectRing color={neckColor} visible={ring('neck')} radius={0.07} />
         <HitProxy id="neck" onSelect={onSelect} onHover={setHovered} radius={0.05} />
       </group>
+      </Dim>
 
+      <Dim on={dim('limbs')}>
       {LIMB_SPOTS.map((spot) => (
         <group key={spot.position.join(',')} position={spot.position} rotation={[0, 0, spot.tilt]}>
           <LimbSegment color={partColor(spot.part)} selected={partLit(spot.part)} />
-          <SelectRing color={partColor(spot.part)} visible={selected === 'limbs'} radius={0.06} />
+          <SelectRing color={partColor(spot.part)} visible={ring('limbs')} radius={0.06} />
           <HitProxy id="limbs" onSelect={onSelect} onHover={setHovered} radius={0.07} />
         </group>
       ))}
+      </Dim>
 
       <FloatingLabel id="heart" text={`HR ${metrics.heartRate.toFixed(0)} BPM`} accent={heartColor}
         visible={showLabel('heart', abnormal('heart'))}

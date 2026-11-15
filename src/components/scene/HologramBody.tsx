@@ -10,12 +10,20 @@ type Props = {
   modelUrl?: string
   /** false＝只畫人體，不畫掃描環與兩側能量柱（監測頁用）；預設 true，舊 HUD 不受影響 */
   decor?: boolean
+  /** true＝調淡人體外殼（監測頁選取部位、拉近時用）；預設 false，舊 HUD 不受影響 */
+  dim?: boolean
 }
+
+/** 外殼平時亮度（同 hologramFresnel 的 uBrightness 預設值）與調淡後的亮度；線框不透明度同理 */
+const SHELL_BRIGHTNESS = 0.4
+const SHELL_DIM = 0.12
+const WIRE_OPACITY = 0.05
+const WIRE_DIM = 0.015
 
 /** CC0 真人肌肉模型（Grab3D Human Muscles light），約 1.80 m */
 const DEFAULT_GLB_URL = 'models/astronaut-body.glb'
 
-function useHologramMaterial(scanEnabled: boolean, alertMix: number) {
+function useHologramMaterial(scanEnabled: boolean, alertMix: number, dim: boolean) {
   const material = useMemo(() => {
     return new THREE.ShaderMaterial({
       uniforms: THREE.UniformsUtils.clone(hologramFresnelShader.uniforms),
@@ -30,6 +38,11 @@ function useHologramMaterial(scanEnabled: boolean, alertMix: number) {
 
   useFrame((_, delta) => {
     material.uniforms.uTime.value += delta
+    material.uniforms.uBrightness.value = THREE.MathUtils.lerp(
+      material.uniforms.uBrightness.value,
+      dim ? SHELL_DIM : SHELL_BRIGHTNESS,
+      1 - Math.exp(-delta * 8),
+    )
     material.uniforms.uScanEnabled.value = scanEnabled ? 1 : 0
     material.uniforms.uAlertMix.value = THREE.MathUtils.lerp(
       material.uniforms.uAlertMix.value,
@@ -41,7 +54,7 @@ function useHologramMaterial(scanEnabled: boolean, alertMix: number) {
   return material
 }
 
-function useWireMaterial(alertMix: number) {
+function useWireMaterial(alertMix: number, dim: boolean) {
   const material = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
@@ -56,7 +69,8 @@ function useWireMaterial(alertMix: number) {
     [],
   )
 
-  useFrame(() => {
+  useFrame((_, delta) => {
+    material.opacity = THREE.MathUtils.lerp(material.opacity, dim ? WIRE_DIM : WIRE_OPACITY, 1 - Math.exp(-delta * 8))
     const alert = new THREE.Color('#ff4d6d')
     const base = new THREE.Color('#3d8fa8')
     // 線框同本體，只帶一半紅色
@@ -198,9 +212,10 @@ export function HologramBody({
   alertMix,
   modelUrl = DEFAULT_GLB_URL,
   decor = true,
+  dim = false,
 }: Props) {
-  const hologramMat = useHologramMaterial(scanEnabled, alertMix)
-  const wireMat = useWireMaterial(alertMix)
+  const hologramMat = useHologramMaterial(scanEnabled, alertMix, dim)
+  const wireMat = useWireMaterial(alertMix, dim)
   const group = useRef<THREE.Group>(null)
 
   useFrame((state) => {
