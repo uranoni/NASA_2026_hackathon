@@ -1,6 +1,6 @@
-# 發佈到 GitHub Pages（免 build、免 npm install）
-# 把 CDN 版本（cdn.html → index.html）、src/、cdn/ 和 public/ 底下的檔案組成靜態網站後發佈。
-# 第一次使用前：Repo Settings → Pages → Build and deployment → Source 選「GitHub Actions」。
+# 免安裝版本直接發佈到 GitHub Pages（只複製檔案，不 build）
+# 依 GitHub 官方範本拆成 build／deploy 兩個 job：同一個 job 裡上傳完立刻部署，
+# 曾連續出現「Found 0 artifact(s)」而失敗
 name: Deploy to GitHub Pages
 
 on:
@@ -15,30 +15,30 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@v6
       - name: Assemble static site (no build)
         run: |
           mkdir _site
           cp -r src cdn _site/
           cp -r public/. _site/
           cp cdn.html _site/index.html
-          touch _site/.nojekyll
-
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
