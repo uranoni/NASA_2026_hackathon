@@ -1,11 +1,39 @@
 import { useMemo, useState } from 'react'
 import { useCabinTelemetry } from '../hooks/useCabinTelemetry'
 import { useTelemetry } from '../hooks/useTelemetry'
-import { evalEnv, evaluate, REGION_NAME, type Context, type Region } from '../lib/assessment'
+import { clampDay, evalEnv, evaluate, REGION_NAME, type Context, type MissionEnv, type Region } from '../lib/assessment'
 import type { OrganId, TelemetrySource } from '../types/telemetry'
 import { CabinPanel, type Environment } from './hud/CabinPanel'
 import { RightPanel } from './hud/RightPanel'
 import { TelemetryScene } from './scene/TelemetryScene'
+
+type MissionSettings = { day: number; env: MissionEnv }
+/** 和新版同一把 key、同樣的預設（第 45 天、ISS）；localStorage 讀寫失敗時退回預設並記錄原因 */
+const SET_KEY = 'astroHealth.settings.v1'
+const ENVS: MissionEnv[] = ['iss', 'transit', 'moon', 'mars', 'ground']
+function loadSettings(): MissionSettings {
+  const def: MissionSettings = { day: 45, env: 'iss' }
+  try {
+    const raw = JSON.parse(localStorage.getItem(SET_KEY) || 'null')
+    if (!raw) return def
+    return {
+      day: clampDay(Number(raw.day) || def.day),
+      env: ENVS.includes(raw.env) ? raw.env : def.env,
+    }
+  } catch (err) {
+    console.warn('[mission] 讀取設定失敗，改用預設值', err)
+    return def
+  }
+}
+function saveSettings(s: MissionSettings) {
+  try {
+    // 保留新版存的其他欄位（例如人體圖 fig）
+    const prev = JSON.parse(localStorage.getItem(SET_KEY) || '{}')
+    localStorage.setItem(SET_KEY, JSON.stringify({ ...prev, day: s.day, env: s.env }))
+  } catch (err) {
+    console.warn('[mission] 儲存設定失敗（只影響重新整理後是否保留）', err)
+  }
+}
 
 type Props = {
   /** 預留：傳入真實 WebSocket / MQTT 遙測來源 */
@@ -25,16 +53,26 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
   const [resetToken, setResetToken] = useState(0)
 
   const cabin = useCabinTelemetry()
-  /** 左下角環境下拉選單：none＝面板收起、環境不列入判斷；iss＝ISS 艙內遙測 */
+  /** 左下角艙內資料選單：none＝艙內數值收起；iss＝ISS 艙內遙測 */
   const [env, setEnv] = useState<Environment>('iss')
+  /** 任務第幾天、所在環境（新版設定頁）：會改變體溫、血壓的判斷範圍；存在瀏覽器，重新整理後保留 */
+  const [settings, setSettings] = useState(loadSettings)
+  const updateSettings = (patch: Partial<MissionSettings>) => {
+    setSettings((s) => {
+      const next = { ...s, ...patch }
+      console.log('[mission]', `任務第 ${next.day} 天、環境 ${next.env}`)
+      saveSettings(next)
+      return next
+    })
+  }
 
   /**
    * 判斷邏輯移植自新版 iss_demo(1).html（src/lib/assessment.ts）。repo 沒有手動輸入，只把遙測裡有的數值填進去：
    * 心率、血壓、血氧、體溫、睡眠。
    * 新版沒有輻射判斷；肌肉疲勞、情緒沒有公開門檻（新版只記錄、不亮燈），而且 repo 的單位（0–100）和新版量表不同，所以不填。
-   * 任務情境暫用新版的預設值：第 45 天、ISS、一般作業（之後的步驟再加設定）。
+   * 作業模式暫用新版預設「一般作業」（之後的步驟再加選單）。
    */
-  const ctx: Context = { day: 45, env: 'iss', act: 'work' }
+  const ctx: Context = useMemo(() => ({ day: settings.day, env: settings.env, act: 'work' }), [settings])
   const assessment = useMemo(
     () =>
       evaluate(ctx, {
@@ -45,15 +83,12 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
         temp: data.coreTemp,
         sleep: data.sleepHours,
       }),
-    // ctx 目前是固定值
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data],
+    [ctx, data],
   )
   // 艙內環境：只給左下角面板顯示，不影響人體燈號（新版原則）
   const cabinEval = useMemo(
     () => (env === 'iss' ? evalEnv(cabin.readings(), ctx.act) : { cards: [], advice: [] }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cabin.readings, env],
+    [cabin.readings, env, ctx.act],
   )
 
   const badRegions = (Object.keys(assessment.level) as Region[]).filter((k) => assessment.level[k] === 'bad')
@@ -121,12 +156,16 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
 
       {/* 右側詳細面板 */}
       <div className="pointer-events-auto absolute right-4 top-4 z-20 max-h-[calc(100%-7.5rem)] overflow-y-auto md:right-6 md:top-6">
-        <RightPanel data={data} selected={selected} assessment={assessment} />
+        <RightPanel data={data} selected={selected} assessment={assessment} ctx={ctx} />
       </div>
 
       {/* 左下：艙內環境（ISS 即時遙測）；手機寬度時往上移，避開底部控制列 */}
       <div className="pointer-events-auto absolute bottom-24 left-4 z-20 md:bottom-6 md:left-6">
         <CabinPanel
+          day={settings.day}
+          onDay={(day) => updateSettings({ day })}
+          missionEnv={settings.env}
+          onMissionEnv={(e) => updateSettings({ env: e })}
           env={env}
           onEnv={(e) => {
             console.log('[ISS cabin]', '環境選單切換為：' + e)
@@ -134,11 +173,6 @@ export default function AstronautTelemetryDashboard({ telemetrySource }: Props) 
           }}
           cards={cabinEval.cards}
           status={cabin.status}
-          sim={cabin.sim}
-          onSim={(s) => {
-            console.log('[ISS cabin]', s ? '環境切換到模擬情境：' + s : '環境切換回 ISS 即時資料')
-            cabin.setSim(s)
-          }}
         />
       </div>
 

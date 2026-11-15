@@ -3,6 +3,7 @@ import { MMHG_PER_PSI, type EnvReadings } from '../lib/assessment'
 
 /**
  * ISS 艙內即時遙測（NASA ISSLIVE，經 Lightstreamer 公開推送）。從 iss_demo.html 移植。
+ * 模擬情境已移除：人體判斷不使用艙內數值（新版原則），模擬只會改左下角顯示，使用者決定拿掉。
  * 函式庫由 index.html 的 <script>（unpkg lightstreamer-client-web@9.2.1）載入，掛在 window 上。
  */
 const IDS = {
@@ -20,14 +21,6 @@ type ValueKey = Exclude<Key, 'time'>
 
 const STALE_MS = 15000
 const HOUR = 3600e3
-
-/** 模擬情境：數值與 iss_demo.html 相同 */
-export const CABIN_SIMS = {
-  co2: { label: 'HIGH CO2', labCO2: 4.8, n3CO2: 5.1, labO2: 160, n3O2: 160, press: 760, temp: 23.5, water: 60 },
-  hypoxia: { label: 'DEPRESS / HYPOXIA', labCO2: 2.2, n3CO2: 2.3, labO2: 118, n3O2: 118, press: 560, temp: 22.0, water: 60 },
-  heat: { label: 'OVERHEAT', labCO2: 2.6, n3CO2: 2.7, labO2: 162, n3O2: 162, press: 758, temp: 28.6, water: 25 },
-} as const
-export type CabinSim = keyof typeof CABIN_SIMS
 
 export type CabinStatus = {
   /** 函式庫是否載入 */
@@ -76,7 +69,6 @@ export function useCabinTelemetry() {
   const raw = useRef<Partial<Record<ValueKey, number>>>({})
   const series = useRef<Partial<Record<ValueKey, Point[]>>>({})
   const lastTimeMsg = useRef(0)
-  const [sim, setSim] = useState<CabinSim | null>(null)
   const [status, setStatus] = useState<CabinStatus>({ libLoaded: true, conn: 'connecting', signal: null, gmt: '—' })
   // 有新資料時遞增，讓畫面重算
   const [tick, setTick] = useState(0)
@@ -149,22 +141,6 @@ export function useCabinTelemetry() {
   }, [])
 
   const readings = useCallback((): EnvReadings => {
-    if (sim) {
-      const s = CABIN_SIMS[sim]
-      return {
-        labO2: s.labO2,
-        labCO2: s.labCO2,
-        n3O2: s.n3O2,
-        n3CO2: s.n3CO2,
-        press: s.press,
-        temp: s.temp,
-        water: s.water,
-        co2Avg: Math.max(s.labCO2, s.n3CO2),
-        pChg: { delta: 0, rate: 0 },
-        co2Minutes: 0,
-        sim: true,
-      }
-    }
     const r = raw.current
     const a1 = avg1h(series.current.labCO2),
       a2 = avg1h(series.current.n3CO2)
@@ -184,7 +160,7 @@ export function useCabinTelemetry() {
     }
     // tick 讓 readings 在新資料進來時換一個新函式，使用端會重算
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sim, tick])
+  }, [tick])
 
-  return { readings, status, sim, setSim }
+  return { readings, status }
 }

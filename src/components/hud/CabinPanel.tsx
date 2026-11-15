@@ -1,20 +1,36 @@
-import type { EnvCard, Level } from '../../lib/assessment'
-import { CABIN_SIMS, type CabinSim, type CabinStatus } from '../../hooks/useCabinTelemetry'
+import type { ReactNode } from 'react'
+import { clampDay, ENV_NAME, type EnvCard, type Level, type MissionEnv } from '../../lib/assessment'
+import type { CabinStatus } from '../../hooks/useCabinTelemetry'
 
-/** 環境選項；之後要加月面基地、探測車等環境時加在這裡 */
+/** 艙內資料選單：none＝面板收起；iss＝顯示 ISS 艙內遙測。和下面的任務環境（影響判斷範圍）是兩件事 */
 export type Environment = 'none' | 'iss'
 const ENV_OPTIONS: { value: Environment; label: string }[] = [
   { value: 'none', label: 'NONE' },
   { value: 'iss', label: 'ISS CABIN' },
 ]
+const MISSION_ENVS: MissionEnv[] = ['iss', 'transit', 'moon', 'mars', 'ground']
+/** 下拉選單用短名稱（完整名稱太長會超出 300px 面板）；完整名稱放在 title，右側面板也會顯示 */
+const ENV_SHORT: Record<MissionEnv, string> = {
+  iss: 'ISS',
+  transit: 'MARS TRANSIT',
+  moon: 'LUNAR BASE',
+  mars: 'MARS BASE',
+  ground: 'GROUND',
+}
+
+const SELECT_CLS =
+  'shrink-0 rounded-sm border border-cyan-400/35 bg-[#020617] px-1.5 py-0.5 text-[10px] tracking-wider text-cyan-100 outline-none focus:border-cyan-300'
 
 type Props = {
+  /** 任務第幾天、所在環境：會改變體溫、血壓的判斷範圍（新版設定頁） */
+  day: number
+  onDay: (d: number) => void
+  missionEnv: MissionEnv
+  onMissionEnv: (e: MissionEnv) => void
   env: Environment
   onEnv: (e: Environment) => void
   cards: EnvCard[]
   status: CabinStatus
-  sim: CabinSim | null
-  onSim: (s: CabinSim | null) => void
 }
 
 /** 狀態色依 3001 Vol 2 表 F.5-1：紅＝警告、黃＝注意、灰＝無資料、青＝資料過舊；另附文字，顏色不是唯一提示 [V2 10045] */
@@ -34,8 +50,7 @@ const SHORT_NAME: Record<EnvCard['key'], string> = {
   water: 'WATER TANK',
 }
 
-function connText(s: CabinStatus, sim: CabinSim | null) {
-  if (sim) return { text: `SIMULATION: ${CABIN_SIMS[sim].label} (not live data)`, dot: 'bg-[#ffd23f]' }
+function connText(s: CabinStatus) {
   if (!s.libLoaded) return { text: 'Library failed to load (offline or unpkg blocked)', dot: 'bg-[#ff2a55]' }
   if (s.conn === 'connecting') return { text: 'Connecting…', dot: 'bg-slate-500' }
   if (s.conn === 'disconnected') return { text: 'Disconnected (auto-reconnecting)', dot: 'bg-[#ff2a55]' }
@@ -44,36 +59,53 @@ function connText(s: CabinStatus, sim: CabinSim | null) {
   return { text: 'ISS LIVE (ISSLIVE)', dot: 'status-live bg-emerald-400' }
 }
 
-export function CabinPanel({ env, onEnv, cards, status, sim, onSim }: Props) {
-  const c = connText(status, sim)
+export function CabinPanel({ day, onDay, missionEnv, onMissionEnv, env, onEnv, cards, status }: Props) {
+  const c = connText(status)
   // ISS 訊號中斷時數值可能過舊，依 F.5-1 用青色標示
-  const stale = !sim && status.signal === false
+  const stale = status.signal === false
 
   const header = (
-    <div className="flex items-center justify-between gap-3">
-      <label
-        htmlFor="env-select"
-        className="whitespace-nowrap text-[10px] tracking-[0.28em] text-cyan-300/80"
-        style={{ fontFamily: 'var(--font-display)' }}
-      >
-        ENVIRONMENT
-      </label>
-      <select
-        id="env-select"
-        value={env}
-        onChange={(e) => onEnv(e.target.value as Environment)}
-        className="shrink-0 rounded-sm border border-cyan-400/35 bg-[#020617] px-1.5 py-0.5 text-[10px] tracking-wider text-cyan-100 outline-none focus:border-cyan-300"
-      >
-        {ENV_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+    <div className="space-y-1.5">
+      <Row id="mission-day" label="MISSION DAY">
+        <input
+          id="mission-day"
+          type="number"
+          min={1}
+          max={1200}
+          inputMode="numeric"
+          value={day}
+          onChange={(e) => onDay(clampDay(parseFloat(e.target.value)))}
+          className={`${SELECT_CLS} w-16 text-right`}
+        />
+      </Row>
+      <Row id="mission-env" label="LOCATION">
+        <select
+          id="mission-env"
+          value={missionEnv}
+          onChange={(e) => onMissionEnv(e.target.value as MissionEnv)}
+          className={SELECT_CLS}
+          title={ENV_NAME[missionEnv]}
+        >
+          {MISSION_ENVS.map((k) => (
+            <option key={k} value={k} title={ENV_NAME[k]}>
+              {ENV_SHORT[k]}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <Row id="env-select" label="CABIN DATA">
+        <select id="env-select" value={env} onChange={(e) => onEnv(e.target.value as Environment)} className={SELECT_CLS}>
+          {ENV_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </Row>
     </div>
   )
 
-  // 沒選環境：只留選單，其餘全部收起（環境也不列入判斷，見 AstronautTelemetryDashboard）
+  // 艙內資料選 NONE：只留設定，艙內數值全部收起
   if (env === 'none') {
     // 寬度跟著內容（w-max），原本固定 220px 會讓下拉框超出框外
     return <section className="hud-glass hud-corner relative w-max max-w-[92vw] p-2.5">{header}</section>
@@ -82,6 +114,12 @@ export function CabinPanel({ env, onEnv, cards, status, sim, onSim }: Props) {
   return (
     <section className="hud-glass hud-corner relative w-[min(300px,92vw)] p-3">
       {header}
+      {/* 新版 envNotIss：環境不是太空站時，艙內數值仍來自 ISS，只供展示 */}
+      {missionEnv !== 'iss' && (
+        <p className="mt-1.5 text-[10px] leading-snug text-[#ffd23f]">
+          Location is not the space station; cabin values still come from ISS telemetry, for display only.
+        </p>
+      )}
       <div className="mt-1 flex justify-end">
         <span className="text-[9px] tracking-widest text-cyan-200/45">GMT {status.gmt}</span>
       </div>
@@ -117,12 +155,6 @@ export function CabinPanel({ env, onEnv, cards, status, sim, onSim }: Props) {
         )}
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1">
-        <SimButton label="LIVE" active={!sim} onClick={() => onSim(null)} />
-        {(Object.keys(CABIN_SIMS) as CabinSim[]).map((k) => (
-          <SimButton key={k} label={CABIN_SIMS[k].label} active={sim === k} onClick={() => onSim(k)} />
-        ))}
-      </div>
       <p className="mt-1.5 text-[9px] leading-snug text-cyan-200/40">
         Thresholds: NASA-STD-3001 Vol 2 Rev F, OCHMO-TB-003 / TB-004. Hover a reading for limits and sources. Cabin readings do not change body status.
       </p>
@@ -130,16 +162,17 @@ export function CabinPanel({ env, onEnv, cards, status, sim, onSim }: Props) {
   )
 }
 
-function SimButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function Row({ id, label, children }: { id: string; label: string; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-sm border px-2 py-1 text-[10px] tracking-wider transition ${
-        active ? 'border-cyan-300 bg-cyan-400/15 text-cyan-50' : 'border-cyan-400/30 text-cyan-100/75 hover:bg-cyan-400/10'
-      }`}
-    >
-      {label}
-    </button>
+    <div className="flex items-center justify-between gap-3">
+      <label
+        htmlFor={id}
+        className="whitespace-nowrap text-[10px] tracking-[0.22em] text-cyan-300/80"
+        style={{ fontFamily: 'var(--font-display)' }}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
   )
 }

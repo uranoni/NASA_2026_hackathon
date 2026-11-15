@@ -625,6 +625,37 @@ export function evaluate(c: Context, m: ManualInput): Assessment {
   return { body, level, advice, vit, overall, hasData, R }
 }
 
+/** 任務環境名稱（新版 envIss 等，翻成英文） */
+export const ENV_NAME: Record<MissionEnv, string> = {
+  iss: 'Space station (microgravity)',
+  transit: 'Mars transit (microgravity)',
+  moon: 'Lunar base (partial gravity)',
+  mars: 'Mars base (partial gravity)',
+  ground: 'Ground (training / post-flight)',
+}
+
+/** 任務天數限制在 1–1200（新版 ctx()） */
+export const clampDay = (d: number) => Math.min(1200, Math.max(1, Math.round(d) || 1))
+
+/** 目前情境下的範圍修正說明（新版 rg_temp_adj／rg_bp_adj／rg_bp_early／rg_partial／rg_ground） */
+export function rangeNotes(c: Pick<Context, 'day' | 'env'>, R: Ranges): string[] {
+  if (c.env === 'ground') return ['Ground clinical values (no spaceflight adjustment)']
+  if (!R.micro) return ['No spaceflight-specific data for partial gravity; ground clinical values are used']
+  const notes: string[] = []
+  // 新版 shortRange 也是 tOff ≥ 0.05 才顯示上修
+  notes.push(
+    R.tOff >= 0.05
+      ? `Fever threshold raised +${R.tOff.toFixed(1)}°C for mission day ${c.day} (about +${TH.tempRiseMax}°C by day ${TH.tempRiseDays}) [Stahn 2017]`
+      : `No fever adjustment yet on day ${c.day} (rises to about +${TH.tempRiseMax}°C by day ${TH.tempRiseDays}) [Stahn 2017]`,
+  )
+  notes.push(
+    R.bpOff
+      ? `Day ${c.day}: 24-h blood pressure drops on long missions (systolic −${TH.sbpDrop}, diastolic −${TH.dbpDrop}), so the low-BP threshold is lowered to < ${R.sbpLow}/${R.dbpLow} [Norsk 2015]`
+      : `Ground blood pressure values until day ${TH.bpAdjFromDay} (study measured on flight days 85–192) [Norsk 2015]`,
+  )
+  return notes
+}
+
 export const REGION_NAME: Record<Region, string> = {
   brain: 'HEAD / BRAIN',
   eyes: 'EYES',

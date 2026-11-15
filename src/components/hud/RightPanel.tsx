@@ -1,5 +1,5 @@
-import type { Assessment, Level, Region, Vital } from '../../lib/assessment'
-import { REGION_NAME } from '../../lib/assessment'
+import type { Assessment, Context, Level, Region, Vital } from '../../lib/assessment'
+import { ENV_NAME, rangeNotes, REGION_NAME } from '../../lib/assessment'
 import type { OrganId, TelemetryState } from '../../types/telemetry'
 import { ORGAN_META } from '../../types/telemetry'
 import { EcgWaveform } from './EcgWaveform'
@@ -8,6 +8,7 @@ type Props = {
   data: TelemetryState
   selected: OrganId | null
   assessment: Assessment
+  ctx: Context
 }
 
 /** 狀態色依 3001 Vol 2 表 F.5-1（黃＝注意、紅＝警告），另附文字與符號，顏色不是唯一提示 [V2 10045] */
@@ -33,7 +34,7 @@ function MetricRow({ label, value, vit }: { label: string; value: string; vit?: 
   )
 }
 
-export function RightPanel({ data, selected, assessment: a }: Props) {
+export function RightPanel({ data, selected, assessment: a, ctx }: Props) {
   const organ = selected ? ORGAN_META[selected] : null
   const v = a.vit
 
@@ -77,6 +78,20 @@ export function RightPanel({ data, selected, assessment: a }: Props) {
       <p className="mt-1 text-[10px] leading-snug text-cyan-200/45">
         Resp rate, fatigue, mood and radiation are shown only (no public threshold, not judged).
       </p>
+
+      {/* 任務情境與目前生效的範圍修正（新版 ranges()；設定在左下角） */}
+      <div className="mt-3 border border-cyan-400/20 bg-black/20 p-2">
+        <p className="text-[10px] tracking-[0.18em] text-cyan-300/70">
+          DAY {ctx.day} · {ENV_NAME[ctx.env].toUpperCase()}
+        </p>
+        <ul className="mt-1 space-y-0.5">
+          {rangeNotes(ctx, a.R).map((n, i) => (
+            <li key={i} className="text-[10px] leading-snug text-cyan-100/65">
+              {n}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {/* 判斷結果：依部位列出影響，附出處 */}
       <div className="mt-4 border border-cyan-400/20 bg-cyan-950/30 p-3">
